@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+streamlit
+requests
+python-dotenv
+websockets
+soundfile
+numpy

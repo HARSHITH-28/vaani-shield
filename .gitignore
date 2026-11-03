@@ -1,0 +1,42 @@
+﻿# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Python virtual environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node dependencies
+node_modules/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build outputs and caches
+build/
+dist/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Local databases and potentially sensitive recordings
+*.db
+*.sqlite
+*.sqlite3
+data/audio/*test*
+data/audio/response_*.wav
