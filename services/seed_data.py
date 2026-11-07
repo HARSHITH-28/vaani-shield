@@ -3,7 +3,11 @@ import argparse
 import random
 from datetime import date, timedelta
 
-from services.database import get_connection, initialize_database
+from services.database import (
+    DEMO_CUSTOMER_KEYS,
+    get_connection,
+    initialize_database,
+)
 
 
 # Reproducible synthetic data
@@ -214,12 +218,15 @@ def seed_database(reset=False):
         # Insert customers and accounts.
         for customer in CUSTOMERS:
 
+            customer_key = DEMO_CUSTOMER_KEYS[customer["email"]]
+
             cursor.execute("""
                 INSERT INTO customers (
-                    name, email, phone, monthly_income
+                    customer_key, name, email, phone, monthly_income
                 )
-                VALUES (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
             """, (
+                customer_key,
                 customer["name"],
                 customer["email"],
                 customer["phone"],

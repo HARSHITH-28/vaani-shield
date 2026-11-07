@@ -1,5 +1,6 @@
 
 from services.banking_service import (
+    get_customer_profile_by_key,
     get_customer_profile,
     get_account_balance,
     get_recent_transactions,
@@ -8,8 +9,14 @@ from services.banking_service import (
     get_loan_details,
     calculate_emi
 )
+from services.database import initialize_database
 
-CUSTOMER_ID = 1
+initialize_database()
+CUSTOMER = get_customer_profile_by_key("demo-arjun")
+if CUSTOMER is None:
+    raise ValueError("Demo customer 'demo-arjun' was not found.")
+
+CUSTOMER_ID = CUSTOMER["customer_id"]
 
 print("\n===== VAANISHIELD BANKING SERVICE TEST =====")
 

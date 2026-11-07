@@ -1,0 +1,722 @@
+"""Authenticated, conversation-first assistant page."""
+
+from __future__ import annotations
+
+import hashlib
+from uuid import UUID
+
+from frontend.api_client import (
+    APIError,
+    build_speech_turn_request,
+    build_text_turn_request,
+)
+from frontend.components.conversation import (
+    message_from_history_turn,
+    messages_from_turn_response,
+    render_messages,
+)
+from frontend.components.conversation_history import create_new_conversation
+from frontend.components.voice_composer import render_language_controls, render_voice_input
+from frontend.navigation import FEATURE_SUBFEATURES, request_navigation
+from frontend.session_state import (
+    bind_pending_scam_assessment,
+    clear_pending_scam_assessment,
+    sign_out,
+)
+
+
+_SCAM_FOLLOW_UP_TERMS = (
+    "scam", "fraud", "suspicious", "this assessment", "that assessment",
+    "this result", "that result", "this warning", "that warning",
+    "this message", "this call", "should i block them",
+    "what should i do about it", "next steps for this", "report this",
+    "\u0938\u094d\u0915\u0948\u092e", "\u091c\u094b\u0916\u093f\u092e", "\u0938\u0941\u0930\u0915\u094d\u0937\u093f\u0924",
+    "\u0cb8\u0ccd\u0caf\u0cbe\u0cae\u0ccd", "\u0c85\u0caa\u0cbe\u0caf", "\u0cb8\u0cc1\u0cb0\u0c95\u0ccd\u0cb7\u0cbf\u0ca4",
+)
+
+
+def assessment_reference_for_text(state, conversation_id, text):
+    assessment_id = state.get("pending_scam_assessment_id")
+    if not assessment_id:
+        return None
+    if str(state.get("pending_scam_conversation_id")) != str(conversation_id):
+        clear_pending_scam_assessment(state)
+        return None
+    normalized = (text or "").casefold()
+    banking_terms = (
+        "balance", "account", "accounts", "card", "cards", "loan", "loans",
+        "transaction", "transactions", "spending", "spend", "savings",
+        "खाता", "बैलेंस", "कार्ड", "लोन", "लेनदेन", "ಖಾತೆ", "ಬ್ಯಾಲೆನ್ಸ್", "ಕಾರ್ಡ್", "ಸಾಲ", "ವಹಿವಾಟು",
+    )
+    if any(term in normalized for term in banking_terms):
+        clear_pending_scam_assessment(state)
+        return None
+    if not any(term.casefold() in normalized for term in _SCAM_FOLLOW_UP_TERMS):
+        clear_pending_scam_assessment(state)
+        return None
+    return str(assessment_id)
+
+
+def transaction_risk_reference_for_conversation(state, conversation_id):
+    """Return a public assessment reference only in the conversation bound to it."""
+    assessment_id = state.get("transaction_risk_follow_up_assessment_id")
+    if not assessment_id:
+        return None
+    if str(state.get("transaction_risk_follow_up_conversation_id")) != str(conversation_id):
+        state["transaction_risk_follow_up_assessment_id"] = None
+        state["transaction_risk_follow_up_conversation_id"] = None
+        return None
+    try:
+        return str(UUID(str(assessment_id)))
+    except (ValueError, TypeError, AttributeError):
+        state["transaction_risk_follow_up_assessment_id"] = None
+        state["transaction_risk_follow_up_conversation_id"] = None
+        return None
+
+
+def _api_error(st, state, exc):
+    if exc.status_code == 401:
+        sign_out(state)
+        st.warning("Your demo session expired. Sign in again to continue.")
+        st.rerun()
+    messages = {
+        404: "This conversation or audio item is unavailable. Start a new conversation and try again.",
+        413: "That recording is too large. Please record a shorter question.",
+        415: "The recording format is not supported. Please use WAV, MP3, OGG, or WebM audio.",
+        503: "The requested assistant service is temporarily unavailable. Your conversation remains available.",
+        429: "The assistant provider is temporarily rate limited. Your message is saved and can be retried shortly.",
+        502: "The assistant provider could not accept this request. Your message is saved and can be retried.",
+        504: "The assistant provider timed out. Your message is saved and can be retried.",
+        0: "The VaaniShield API could not be reached. Check that the backend is running.",
+    }
+    safe_provider_details = {
+        "Speech recognition is not configured. Ask the administrator to check Gnani settings.",
+        "Speech recognition timed out. Please try again.",
+        "Speech recognition credentials were rejected. Ask the administrator to check Gnani settings.",
+        "Speech recognition is temporarily rate limited. Please try again shortly.",
+        "Speech recognition provider returned an error. Please try again later.",
+        "Speech recognition could not connect to its provider. Please try again later.",
+        "Speech recognition could not process the recording. Check Gnani configuration or try again later.",
+        "The assistant took too long to respond. Please try again.",
+        "The assistant could not respond right now. Your message is saved. Please try again.",
+        "The Gemini SDK is not installed. Install the project requirements.",
+        "Gemini is selected but GEMINI_API_KEY is not configured.",
+        "The assistant request was too large for the provider, even after safely condensing context. Your message is saved; retry or ask a shorter question.",
+        "The assistant service is temporarily rate limited. Your message is saved; please retry shortly.",
+        "The assistant took too long to respond. Your message is saved; you can retry it.",
+        "The assistant provider is temporarily unavailable. Your message is saved; you can retry it.",
+        "The assistant could not connect to its provider. Your message is saved; you can retry it.",
+        "The assistant provider rejected its configured credentials or permissions. Ask the administrator to check provider configuration.",
+    }
+    detail = str(exc)
+    # The API's detail field contains only authored, provider-safe messages.
+    # Show only known-safe details; do not surface unrecognized backend text.
+    safe_transport_details = {
+        "The VaaniShield API connection timed out.",
+        "The VaaniShield API did not respond before the request timed out.",
+        "The VaaniShield API could not be reached. Check that the backend is running.",
+        "The VaaniShield API request could not be completed.",
+    }
+    st.error(
+        detail if detail in safe_provider_details or detail in safe_transport_details
+        else messages.get(exc.status_code, "The request could not be completed. Check the request and try again.")
+    )
+
+
+def _load_history(api, state):
+    conversation_id = state.get("conversation_id")
+    if not conversation_id or state.get("loaded_conversation_id") == conversation_id:
+        return
+    page = api.get_conversation_turns(conversation_id, limit=100)
+    turns = page.get("items", [])
+    state["conversation_messages"] = [message_from_history_turn(turn) for turn in turns]
+    state["loaded_conversation_id"] = conversation_id
+    state["conversation_cursor"] = page.get("next_cursor")
+    state["conversation_has_more"] = bool(page.get("has_more"))
+
+
+def _ensure_conversation(api, state):
+    if not state.get("conversation_id"):
+        create_new_conversation(api, state)
+
+
+def _remember_failed_user_message(state, failed):
+    client_id = failed.get("client_turn_id")
+    local_id = f"failed-{client_id}"
+    if client_id and not any(item.get("id") == local_id for item in state["conversation_messages"]):
+        state["conversation_messages"].append({
+            "id": local_id,
+            "role": "user",
+            "text": failed.get("text") or "Saved request",
+            "input_mode": "speech" if failed.get("is_voice") else "text",
+            "detected_languages": [],
+            "is_code_mixed": False,
+            "speech_audio_id": None,
+            "response_language": None,
+        })
+
+
+def _send_turn(api, state, payload):
+    try:
+        response = api.send_assistant_turn(payload)
+    except APIError as exc:
+        failed = state.get("assistant_failed_turn") or {}
+        if exc.status_code == 0:
+            # The backend may have finished even though the response was lost.
+            # Reuse the exact idempotency key once to retrieve its saved result.
+            try:
+                response = api.send_assistant_turn(payload)
+            except APIError as retry_exc:
+                exc = retry_exc
+            else:
+                exc = None
+        if exc is not None:
+            if exc.status_code == 0 or (exc.status_code == 409 and any(
+                term in str(exc).casefold() for term in ("already processing", "in progress")
+            )):
+                failed["status"] = "processing"
+                failed["recovery_attempted"] = True
+                failed["error"] = None
+                failed["status_message"] = (
+                    "The connection was interrupted; Vaani may still be completing this request."
+                    if exc.status_code == 0 else
+                    "Vaani is still processing this saved request. Check its response in a moment."
+                )
+            else:
+                failed["status"] = "failed"
+                failed["error"] = str(exc) or "The assistant request could not be completed. Please retry."
+            state["assistant_failed_turn"] = failed
+            _remember_failed_user_message(state, failed)
+            raise exc
+
+    if not isinstance(response, dict):
+        message = "The assistant returned an unreadable response. Retry to retrieve its saved result."
+        failed = state.get("assistant_failed_turn") or {}
+        failed.update(status="failed", error=message)
+        state["assistant_failed_turn"] = failed
+        _remember_failed_user_message(state, failed)
+        raise APIError(502, message)
+    application_error = response.get("error") or response.get("error_code")
+    if application_error or not all(response.get(key) for key in (
+        "conversation_id", "turn_id", "assistant_text",
+    )):
+        message = (
+            str(response.get("message") or application_error)
+            if application_error else
+            "The assistant returned an incomplete response. Retry to retrieve its saved result."
+        )
+        failed = state.get("assistant_failed_turn") or {}
+        failed.update(status="failed", error=message)
+        state["assistant_failed_turn"] = failed
+        _remember_failed_user_message(state, failed)
+        raise APIError(502, message, response)
+    return response
+
+
+def _submit(api, st, state, *, text=None, audio=None, retry=False):
+    _ensure_conversation(api, state)
+    mode = state.get("response_mode", "text")
+    if (audio is not None or state.get("wake_word_enabled")) and mode == "text":
+        mode = "speech_and_text"
+    response_language = state["response_language"]
+    assessment_id = None
+    failed_turn = state.get("assistant_failed_turn") if retry else None
+    pending_docs = list(state.get("pending_attachments") or [])
+    attachments_payload = [
+        {
+            "attachment_id": doc.get("attachment_id"),
+            "file_name": doc.get("file_name"),
+            "file_type": doc.get("file_type"),
+            "file_size_bytes": doc.get("file_size_bytes", 0),
+            "extracted_text": doc.get("extracted_text", ""),
+            "summary_metadata": doc.get("summary_metadata", {}),
+        }
+        for doc in pending_docs
+    ] if pending_docs else None
+
+    if retry:
+        payload = state.get("assistant_retry_payload")
+        if not isinstance(payload, dict):
+            return
+        text = (failed_turn or {}).get("text")
+        assessment_id = payload.get("scam_assessment_id")
+        response = _send_turn(api, state, payload)
+    elif audio is not None:
+        # A new recording starts a new assistant input flow. We cannot inspect
+        # its content without transcribing it, so do not attach stale context.
+        clear_pending_scam_assessment(state)
+        raw = audio.getvalue()
+        if not raw:
+            st.warning("No audio was captured. Try recording again.")
+            return
+        with st.status("Uploading and transcribing your recording…", expanded=False):
+            uploaded = api.upload_audio(
+                getattr(audio, "name", "question.wav") or "question.wav",
+                raw,
+                getattr(audio, "type", None) or "audio/wav",
+            )
+            payload = build_speech_turn_request(
+                state["conversation_id"], uploaded["audio_upload_id"], mode,
+                state["language_hint"], response_language,
+                attachments=attachments_payload,
+            )
+            state["assistant_retry_payload"] = payload
+            state["assistant_failed_turn"] = {
+                "client_turn_id": payload["client_turn_id"],
+                "text": "Voice message (transcript will be restored from the saved turn)",
+                "is_voice": True,
+                "error": None,
+                "status": "processing",
+                "recovery_attempted": False,
+            }
+            response = _send_turn(api, state, payload)
+    else:
+        assessment_id = assessment_reference_for_text(
+            state, state["conversation_id"], text,
+        )
+        payload = build_text_turn_request(
+            state["conversation_id"], text, mode,
+            state["language_hint"], response_language,
+            scam_assessment_id=assessment_id,
+            attachments=attachments_payload,
+        )
+        state["assistant_retry_payload"] = payload
+        state["assistant_failed_turn"] = {
+            "client_turn_id": payload["client_turn_id"],
+            "text": text.strip(),
+            "is_voice": False,
+            "error": None,
+            "status": "processing",
+            "recovery_attempted": False,
+        }
+        with st.spinner("Preparing your response…"):
+            response = _send_turn(api, state, payload)
+
+    persisted_input_text = text
+    if pending_docs and text:
+        from services.document_processing_service import format_document_context_for_prompt
+        doc_ctx = format_document_context_for_prompt(pending_docs)
+        if doc_ctx:
+            persisted_input_text = f"{doc_ctx}\n\nCustomer Message:\n{text}"
+
+    messages = messages_from_turn_response(response, input_text=persisted_input_text)
+    state["pending_attachments"] = []
+    state["uploaded_attachment_hashes"] = set()
+    failed_id = (failed_turn or {}).get("client_turn_id")
+    if failed_id:
+        state["conversation_messages"] = [
+            item for item in state["conversation_messages"]
+            if item.get("id") != f"failed-{failed_id}"
+        ]
+    existing_message_ids = {
+        item.get("id") for item in state["conversation_messages"]
+    }
+    state["conversation_messages"].extend(
+        item for item in messages if item.get("id") not in existing_message_ids
+    )
+    state["assistant_retry_payload"] = None
+    state["assistant_failed_turn"] = None
+    assessment = response.get("scam_assessment")
+    if isinstance(assessment, dict) and assessment.get("assessment_id"):
+        state["latest_scam_assessment"] = assessment
+        bind_pending_scam_assessment(
+            state, assessment["assessment_id"], state["conversation_id"],
+        )
+    elif assessment_id:
+        clear_pending_scam_assessment(state)
+    for item in response.get("tool_results") or []:
+        if not isinstance(item, dict):
+            continue
+        nav = (item.get("data") or {}).get("ui_navigation")
+        if isinstance(nav, dict):
+            subfeat = nav.get("subfeature")
+            target_feat = None
+            if subfeat in FEATURE_SUBFEATURES.get("Banking Information", ()):
+                target_feat = "Banking Information"
+            elif subfeat in FEATURE_SUBFEATURES.get("Account Opening Assistant", ()):
+                target_feat = "Account Opening Assistant"
+            if target_feat and subfeat:
+                request_navigation(
+                    state, target_feat, subfeat, step=nav.get("step"),
+                )
+    state["loaded_conversation_id"] = state["conversation_id"]
+    state["last_audio_hash"] = None
+    state["audio_widget_epoch"] += 1
+    audio_message = messages[-1]
+    if mode in {"speech", "speech_and_text"} and not audio_message.get("speech_audio_id"):
+        st.warning("Your text response is ready, but speech could not be generated.")
+    if audio_message.get("speech_audio_id"):
+        try:
+            audio_bytes, media_type = api.fetch_audio(audio_message["speech_audio_id"])
+            audio_message["speech_media_type"] = media_type
+            state["audio_cache"][audio_message["id"]] = audio_bytes
+            state["audio_playback_visible"][audio_message["id"]] = True
+            state["autoplay_audio_id"] = audio_message["id"]
+        except APIError as exc:
+            st.warning("Your text response is ready, but its audio could not be loaded.")
+            if exc.status_code == 401:
+                _api_error(st, state, exc)
+        except Exception:
+            # The assistant turn and its text are already saved locally. A
+            # playback retrieval problem is optional and must not fail the turn.
+            st.warning("Your text response is ready, but its audio could not be loaded.")
+    st.rerun()
+
+
+def _recover_interrupted_turn(api, st, state):
+    """Reconcile a turn whose Streamlit run ended while its POST was pending."""
+    pending = state.get("assistant_failed_turn") or {}
+    if (
+        pending.get("status") != "processing"
+        or pending.get("recovery_attempted")
+        or not state.get("assistant_retry_payload")
+    ):
+        return False
+    pending["recovery_attempted"] = True
+    try:
+        _submit(api, st, state, retry=True)
+        return True
+    except APIError as exc:
+        if exc.status_code == 401:
+            _api_error(st, state, exc)
+        return False
+    except ValueError as exc:
+        pending.update(status="failed", error=str(exc))
+        return False
+
+
+def _handle_file_upload(st, api, state, uploaded_file, is_image: bool = False):
+    content = uploaded_file.getvalue()
+    if not isinstance(content, (bytes, bytearray)):
+        content = bytes(content) if content else b""
+    if not content:
+        st.warning("The selected file is empty.")
+        return
+    if len(content) > 10 * 1024 * 1024:
+        st.error("File exceeds maximum size of 10MB.")
+        return
+
+    file_hash = hashlib.sha256(content).hexdigest()
+    seen_hashes = state.setdefault("uploaded_attachment_hashes", set())
+    if file_hash in seen_hashes:
+        return
+
+    _ensure_conversation(api, state)
+    conv_id = state.get("conversation_id")
+    try:
+        with st.spinner("Processing attachment…"):
+            result = api.upload_attachment(
+                uploaded_file.name,
+                content,
+                uploaded_file.type or ("image/png" if is_image else "application/octet-stream"),
+                conversation_id=conv_id,
+            )
+            seen_hashes.add(file_hash)
+            state.setdefault("pending_attachments", []).append(result)
+            if is_image:
+                state["img_upload_epoch"] = state.get("img_upload_epoch", 0) + 1
+            else:
+                state["doc_upload_epoch"] = state.get("doc_upload_epoch", 0) + 1
+            st.rerun()
+    except APIError as exc:
+        if exc.status_code == 401:
+            sign_out(state)
+            st.rerun()
+        st.error(str(exc))
+    except Exception as exc:
+        st.error(f"Failed to process attachment: {exc}")
+
+
+def render(st, api, state, *, compact=False):
+    customer = state.get("customer") or {}
+    if compact:
+        st.caption("Speak or type in Kannada, English, Hindi, or a code-mixed conversation.")
+    else:
+        st.markdown("<div class='section-eyebrow'>VAANISHIELD · VOICE BANKING ASSISTANT</div>", unsafe_allow_html=True)
+        st.title("How can I help you today?")
+        st.caption("Speak or type in Kannada, English, Hindi, or a code-mixed conversation.")
+        left, right = st.columns([3, 1])
+        with left:
+            if customer.get("display_name"):
+                st.markdown(f"**{customer['display_name']}** · Demo session")
+        with right:
+            st.caption("Voice and text responses are processed by the configured assistant services.")
+        st.divider()
+
+    try:
+        _load_history(api, state)
+    except APIError as exc:
+        _api_error(st, state, exc)
+        return
+
+    # If Streamlit reran after the backend accepted a request but before this
+    # run saved its response in session state, replay the same client_turn_id.
+    _recover_interrupted_turn(api, st, state)
+
+    risk_assessment_id = transaction_risk_reference_for_conversation(
+        state, state.get("conversation_id"),
+    )
+    if risk_assessment_id and st.button(
+        "Explain this transaction-risk assessment",
+        key="assistant-explain-transaction-risk",
+    ):
+        state["transaction_risk_follow_up_assessment_id"] = None
+        state["transaction_risk_follow_up_conversation_id"] = None
+        try:
+            _submit(
+                api, st, state,
+                text=f"Explain this transaction risk assessment {risk_assessment_id}",
+            )
+        except APIError as exc:
+            _api_error(st, state, exc)
+        except ValueError as exc:
+            st.warning(str(exc))
+
+    with st.container(key="copilot-chat-scroll-area"):
+        render_messages(st, state["conversation_messages"], state, api=api)
+        failed_turn = state.get("assistant_failed_turn")
+        if failed_turn and state.get("assistant_retry_payload"):
+            with st.container(border=True):
+                is_processing = failed_turn.get("status") == "processing"
+                if is_processing:
+                    st.info(failed_turn.get("status_message") or "Vaani is still processing this saved request. Check its response in a moment.")
+                else:
+                    st.error(
+                        failed_turn.get("error")
+                        or "Vaani could not complete this turn. The original request is saved."
+                    )
+                retry_label = "Check response" if is_processing else "Retry this message"
+                if st.button(retry_label, key="assistant-retry-saved-turn", type="primary"):
+                    try:
+                        _submit(api, st, state, retry=True)
+                    except APIError as exc:
+                        if exc.status_code != 409 or failed_turn.get("status") != "processing":
+                            _api_error(st, state, exc)
+                        st.rerun()
+                    except ValueError as exc:
+                        failed_turn["error"] = str(exc)
+                        st.rerun()
+        if not state["conversation_messages"]:
+            st.markdown(
+                """
+                <div class="chatgpt-welcome-container">
+                  <div class="chatgpt-welcome-avatar">🛡️</div>
+                  <h2 class="chatgpt-welcome-title">How can I help you today?</h2>
+                  <p class="chatgpt-welcome-subtitle">Your intelligent banking companion. Ask about accounts, transactions, loans, spending or security.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            prompts = [
+                ("💳 Check my balance", "What is my account balance?"),
+                ("📊 Analyze spending", "Analyze my spending this month and show key categories"),
+                ("📄 View active loans", "Show my active loans and repayment progress"),
+                ("🛡️ Security alerts", "Are there any recent security alerts on my account?"),
+            ]
+            prompt_cols = st.columns(2)
+            for idx, (label, full_prompt) in enumerate(prompts):
+                col = prompt_cols[idx % 2]
+                key_id = f"copilot-dock-prompt-{label}" if compact else f"copilot-wide-prompt-{label}"
+                if col.button(label, key=key_id, width="stretch"):
+                    try:
+                        _submit(api, st, state, text=full_prompt)
+                    except APIError as exc:
+                        _api_error(st, state, exc)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.warning(str(exc))
+        if state.get("conversation_has_more") and st.button("Load earlier messages"):
+            try:
+                page = api.get_conversation_turns(
+                    state["conversation_id"], limit=100,
+                    cursor=state.get("conversation_cursor"),
+                )
+                earlier = [message_from_history_turn(turn) for turn in page.get("items", [])]
+                state["conversation_messages"] = earlier + state["conversation_messages"]
+                state["conversation_cursor"] = page.get("next_cursor")
+                state["conversation_has_more"] = bool(page.get("has_more"))
+                st.rerun()
+            except APIError as exc:
+                _api_error(st, state, exc)
+
+    if not compact:
+        with st.expander("⚙️ Assistant format & language settings", expanded=False):
+            col1, col2 = st.columns([1.1, 2])
+            with col1:
+                mode_label = st.selectbox(
+                    "Response format", ["Text", "Speech", "Speech + text"],
+                    index={"text": 0, "speech": 1, "speech_and_text": 2}.get(state["response_mode"], 0),
+                    key="assistant_response_mode",
+                )
+                state["response_mode"] = {"Text": "text", "Speech": "speech", "Speech + text": "speech_and_text"}[mode_label]
+            with col2:
+                render_language_controls(st, state)
+
+    # Prominent Sticky Composer at bottom of Copilot
+    with st.container(key="copilot-sticky-composer"):
+        pending_attachments = state.get("pending_attachments") or []
+        if pending_attachments:
+            st.markdown("<div class='composer-attachments-preview'>", unsafe_allow_html=True)
+            for idx, att in enumerate(pending_attachments):
+                att_col, del_col = st.columns([5, 1])
+                with att_col:
+                    ftype = str(att.get("file_type", "doc")).upper()
+                    icon = "🖼️" if ftype in {"JPG", "JPEG", "PNG", "WEBP", "IMAGE"} else "📄"
+                    fname = att.get("file_name", "Attachment")
+                    size_kb = max(1, att.get("file_size_bytes", 0) // 1024)
+                    thumb_html = ""
+                    if att.get("thumbnail_base64"):
+                        thumb_html = f"<img src='data:image/png;base64,{att['thumbnail_base64']}' class='composer-chip-thumb' /> "
+                    st.markdown(
+                        f"<div class='composer-attachment-chip'>{thumb_html}{icon} <b>{fname}</b> <span class='chip-tag'>{ftype}</span> <span class='chip-size'>{size_kb} KB</span></div>",
+                        unsafe_allow_html=True,
+                    )
+                with del_col:
+                    if st.button("✕", key=f"btn_remove_pending_{idx}", help="Remove attachment"):
+                        pending_attachments.pop(idx)
+                        state["pending_attachments"] = pending_attachments
+                        st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        if state.get("copilot_show_voice"):
+            with st.container(key="copilot-voice-tray"):
+                v_title, v_close = st.columns([5.0, 0.8])
+                with v_title:
+                    st.markdown(
+                        """
+                        <div class="voice-tray-header">
+                          <span class="voice-tray-pulse"></span>
+                          <span class="voice-tray-title">🎙️ Speak in Kannada, English, or Hindi</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                with v_close:
+                    if st.button("✕", key="btn_close_voice_tray", help="Close voice input"):
+                        state["copilot_show_voice"] = False
+                        st.rerun()
+                recording = render_voice_input(st, state["audio_widget_epoch"])
+                if recording is not None:
+                    digest = hashlib.sha256(recording.getvalue()).hexdigest()
+                    if digest != state.get("last_audio_hash"):
+                        state["last_audio_hash"] = digest
+                        state["copilot_show_voice"] = False
+                        try:
+                            _submit(api, st, state, audio=recording)
+                        except APIError as exc:
+                            state["last_audio_hash"] = digest
+                            _api_error(st, state, exc)
+                            st.rerun()
+                        except ValueError as exc:
+                            st.warning(str(exc))
+
+        with st.container(key="copilot-composer-pill"):
+            c_plus, c_input, c_mic, c_send = st.columns([0.45, 3.4, 0.45, 0.45])
+
+            with c_plus:
+                with st.popover("", icon=":material/add:", help="Actions & attachments", key="composer_actions_popover"):
+                    st.markdown("<div class='popover-action-title'>Actions</div>", unsafe_allow_html=True)
+                    if st.button("🔄 New conversation", key="popover_new_conversation", width="stretch"):
+                        try:
+                            conversation = create_new_conversation(api, state)
+                            state["pending_attachments"] = []
+                            state["floating-assistant-conversation"] = conversation["conversation_id"]
+                            st.rerun()
+                        except APIError as exc:
+                            if exc.status_code == 401:
+                                sign_out(state)
+                                st.rerun()
+                            st.error("The conversation could not be created. Please try again.")
+
+                    st.divider()
+                    st.markdown("<div class='popover-action-title'>📄 Add files</div>", unsafe_allow_html=True)
+                    doc_file = st.file_uploader(
+                        "Upload Document",
+                        type=["pdf", "docx", "txt", "csv", "xlsx"],
+                        key=f"composer_doc_file_{state.get('doc_upload_epoch', 0)}",
+                        label_visibility="collapsed",
+                        help="PDF, DOCX, TXT, CSV, or XLSX up to 10MB",
+                    )
+                    if doc_file is not None:
+                        _handle_file_upload(st, api, state, doc_file, is_image=False)
+
+                    st.divider()
+                    st.markdown("<div class='popover-action-title'>🖼️ Add photos</div>", unsafe_allow_html=True)
+                    img_file = st.file_uploader(
+                        "Upload Photo",
+                        type=["jpg", "jpeg", "png", "webp"],
+                        key=f"composer_img_file_{state.get('img_upload_epoch', 0)}",
+                        label_visibility="collapsed",
+                        help="JPG, JPEG, PNG, or WEBP up to 10MB",
+                    )
+                    if img_file is not None:
+                        _handle_file_upload(st, api, state, img_file, is_image=True)
+
+            input_key = f"copilot_text_input_{state.get('input_epoch', 0)}"
+
+            def _on_enter_press():
+                state["copilot_enter_pressed"] = True
+
+            with c_input:
+                entered_text = st.text_area(
+                    "Message Vaani...",
+                    key=input_key,
+                    placeholder="Message Vaani...",
+                    label_visibility="collapsed",
+                    height=38,
+                    on_change=_on_enter_press,
+                )
+
+            with c_mic:
+                mic_help = "Close voice input" if state.get("copilot_show_voice") else "Voice input"
+                if st.button("🎙️", key="copilot_mic_toggle_btn", help=mic_help):
+                    state["copilot_show_voice"] = not bool(state.get("copilot_show_voice"))
+                    st.rerun()
+
+            with c_send:
+                send_clicked = st.button("➤", key="copilot_send_button", type="primary", help="Send message")
+
+        # Client-side Enter key handler for the textarea to submit on Enter without Shift
+        st.markdown(
+            """
+            <script>
+            (function() {
+                function setupEnter() {
+                    const pill = document.querySelector('.st-key-copilot-composer-pill');
+                    if (!pill) return;
+                    const area = pill.querySelector('textarea');
+                    if (area && !area.dataset.enterBound) {
+                        area.dataset.enterBound = 'true';
+                        area.addEventListener('keydown', function(e) {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                const sendBtn = document.querySelector('.st-key-copilot_send_button button');
+                                if (sendBtn) sendBtn.click();
+                            }
+                        });
+                    }
+                }
+                setupEnter();
+                setTimeout(setupEnter, 300);
+            })();
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        enter_pressed = state.pop("copilot_enter_pressed", False)
+        if send_clicked or enter_pressed:
+            submitted_text = (entered_text or "").strip()
+            has_pending = bool(state.get("pending_attachments"))
+            if not submitted_text and has_pending:
+                submitted_text = "Please analyze the attached document."
+            if submitted_text:
+                state["input_epoch"] = state.get("input_epoch", 0) + 1
+                try:
+                    _submit(api, st, state, text=submitted_text)
+                except APIError as exc:
+                    _api_error(st, state, exc)
+                    st.rerun()
+                except ValueError as exc:
+                    st.warning(str(exc))
+

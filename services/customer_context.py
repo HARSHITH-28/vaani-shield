@@ -1,10 +1,10 @@
 
 from datetime import datetime
 
-from services.database import get_connection
+from services.database import get_connection, initialize_database
 
 from services.banking_service import (
-    get_customer_profile,
+    get_customer_profile_by_reference,
     get_account_balance,
     get_recent_transactions,
     get_card_details,
@@ -46,16 +46,18 @@ def get_latest_transaction_period(customer_id):
     return latest_date.year, latest_date.month
 
 
-def get_customer_context(customer_id, year=None, month=None):
+def get_customer_context(customer_reference, year=None, month=None):
     """
     Aggregate customer, banking and financial intelligence
     into one structured, AI-ready context object.
     """
 
-    profile = get_customer_profile(customer_id)
+    profile = get_customer_profile_by_reference(customer_reference)
 
     if profile is None:
         raise ValueError("Customer not found.")
+
+    customer_id = profile["customer_id"]
 
     if year is None or month is None:
         latest_year, latest_month = (
@@ -108,6 +110,7 @@ def get_customer_context(customer_id, year=None, month=None):
 
         "metadata": {
             "customer_id": customer_id,
+            "customer_key": profile["customer_key"],
             "report_period": f"{year}-{month:02d}",
             "data_source": "VaaniShield synthetic banking database",
             "is_synthetic_data": True,
@@ -116,22 +119,21 @@ def get_customer_context(customer_id, year=None, month=None):
 
 
 if __name__ == "__main__":
+    initialize_database()
     conn = get_connection()
 
     customer = conn.execute("""
-        SELECT customer_id
+        SELECT customer_key
         FROM customers
-        WHERE email = ?
-    """, ("arjun@example.com",)).fetchone()
+        WHERE customer_key = ?
+    """, ("demo-arjun",)).fetchone()
 
     conn.close()
 
     if customer is None:
         raise ValueError("Arjun's customer record was not found.")
 
-    context = get_customer_context(
-        customer["customer_id"]
-    )
+    context = get_customer_context(customer["customer_key"])
 
     import json
 

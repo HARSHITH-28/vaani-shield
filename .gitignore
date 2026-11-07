@@ -1,4 +1,4 @@
-﻿# Environment files and secrets
+# Environment files and secrets
 .env
 .env.*
 !.env.example
@@ -40,3 +40,6 @@ dist/
 *.sqlite3
 data/audio/*test*
 data/audio/response_*.wav
+data/audio/assistant_*.wav
+
+data/kyc_documents/

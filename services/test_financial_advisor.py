@@ -1,7 +1,8 @@
 
 from pprint import pprint
 
-from services.database import get_connection
+from services.banking_service import get_customer_profile_by_key
+from services.database import initialize_database
 
 from services.financial_advisor import (
     compare_monthly_spending,
@@ -12,16 +13,8 @@ from services.financial_advisor import (
 )
 
 
-# Automatically identify Arjun
-conn = get_connection()
-
-customer = conn.execute("""
-    SELECT customer_id
-    FROM customers
-    WHERE email = ?
-""", ("arjun@example.com",)).fetchone()
-
-conn.close()
+initialize_database()
+customer = get_customer_profile_by_key("demo-arjun")
 
 if customer is None:
     raise ValueError("Arjun's customer record was not found.")

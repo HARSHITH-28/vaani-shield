@@ -7,7 +7,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 
 from services.banking_service import (
     get_account_balance,
-    get_customer_profile,
+    get_customer_profile_by_key,
     get_recent_transactions,
     search_transactions,
     get_card_details,
@@ -22,7 +22,7 @@ router = APIRouter(
     tags=["Gnani Agent Actions"],
 )
 
-DEMO_CUSTOMER_ID = 4
+DEMO_CUSTOMER_KEY = "demo-arjun"
 
 
 def verify_action_token(token: str | None):
@@ -42,7 +42,7 @@ def verify_action_token(token: str | None):
 
 
 def get_demo_profile():
-    profile = get_customer_profile(DEMO_CUSTOMER_ID)
+    profile = get_customer_profile_by_key(DEMO_CUSTOMER_KEY)
 
     if not profile:
         raise HTTPException(
@@ -60,7 +60,7 @@ def agent_account_balance(
     verify_action_token(x_vaanishield_token)
     profile = get_demo_profile()
 
-    accounts = get_account_balance(DEMO_CUSTOMER_ID)
+    accounts = get_account_balance(profile["customer_id"])
 
     if not accounts:
         raise HTTPException(
@@ -72,7 +72,8 @@ def agent_account_balance(
         "success": True,
         "tool": "get_account_balance",
         "customer": {
-            "customer_id": DEMO_CUSTOMER_ID,
+            "customer_id": profile["customer_id"],
+            "customer_key": profile["customer_key"],
             "name": profile["name"],
         },
         "accounts": accounts,
@@ -90,7 +91,7 @@ def agent_recent_transactions(
     profile = get_demo_profile()
 
     transactions = get_recent_transactions(
-        DEMO_CUSTOMER_ID,
+        profile["customer_id"],
         limit=limit,
     )
 
@@ -156,7 +157,7 @@ def agent_search_transactions(
     profile = get_demo_profile()
 
     transactions = search_transactions(
-        customer_id=DEMO_CUSTOMER_ID,
+        customer_id=profile["customer_id"],
         merchant=merchant,
         category=category,
         transaction_type=transaction_type,
@@ -214,7 +215,7 @@ def agent_card_details(
     verify_action_token(x_vaanishield_token)
     profile = get_demo_profile()
 
-    cards = get_card_details(DEMO_CUSTOMER_ID)
+    cards = get_card_details(profile["customer_id"])
 
     return {
         "success": True,
@@ -235,7 +236,7 @@ def agent_request_card_block(
     profile = get_demo_profile()
 
     result = request_card_block(
-        customer_id=DEMO_CUSTOMER_ID,
+        customer_id=profile["customer_id"],
         card_id=card_id,
     )
 
@@ -295,7 +296,7 @@ def agent_confirm_card_block(
     profile = get_demo_profile()
 
     result = confirm_card_block(
-        customer_id=DEMO_CUSTOMER_ID,
+        customer_id=profile["customer_id"],
         card_id=card_id,
     )
 

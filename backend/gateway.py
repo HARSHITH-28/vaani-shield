@@ -1,5 +1,7 @@
 ﻿from fastapi import FastAPI
+
 from backend.agent_routes import router as agent_router
+from services.database import initialize_database
 
 app = FastAPI(
     title="VaaniShield Gnani Gateway",
@@ -8,6 +10,12 @@ app = FastAPI(
 )
 
 app.include_router(agent_router)
+
+
+@app.on_event("startup")
+def initialize_database_on_startup():
+    """Create or migrate the schema without seeding or resetting data."""
+    initialize_database()
 
 
 @app.get("/")

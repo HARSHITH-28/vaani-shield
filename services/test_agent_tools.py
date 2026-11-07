@@ -1,28 +1,30 @@
 
 from pprint import pprint
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
-from services.database import get_connection
+from services.banking_service import get_customer_profile_by_key
+from services.database import initialize_database
 from services.agent_tools import (
     execute_tool,
     get_available_tools,
 )
+from services.principal import CustomerPrincipal
 
 
-# Find Arjun's current customer ID
-conn = get_connection()
-
-customer = conn.execute("""
-    SELECT customer_id
-    FROM customers
-    WHERE email = ?
-""", ("arjun@example.com",)).fetchone()
-
-conn.close()
+initialize_database()
+customer = get_customer_profile_by_key("demo-arjun")
 
 if customer is None:
     raise ValueError("Arjun's customer record was not found.")
 
-CUSTOMER_ID = customer["customer_id"]
+now = datetime.now(timezone.utc)
+PRINCIPAL = CustomerPrincipal(
+    customer_key=customer["customer_key"],
+    session_id=uuid4(),
+    issued_at=now,
+    expires_at=now + timedelta(hours=1),
+)
 
 
 def run_test(name, tool_name, arguments=None):
@@ -31,7 +33,7 @@ def run_test(name, tool_name, arguments=None):
     try:
         result = execute_tool(
             tool_name,
-            CUSTOMER_ID,
+            PRINCIPAL,
             arguments or {}
         )
         pprint(result)

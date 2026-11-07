@@ -1,4 +1,5 @@
 
+import json
 import os
 from pathlib import Path
 
@@ -11,6 +12,7 @@ API_KEY = os.getenv("GNANI_API_KEY")
 
 PRISMA_URL = "https://api.vachana.ai/stt/v3"
 TIMBRE_URL = "https://api.vachana.ai/api/v1/tts/inference"
+TIMBRE_V25_URL = "https://api.vachana.ai/api/v1/tts/inference"
 
 AUDIO_DIR = Path(__file__).resolve().parent.parent / "data" / "audio"
 
@@ -27,7 +29,15 @@ def _get_headers(json_content=False):
     return headers
 
 
-def transcribe_audio(audio_path, language_code="indic-auto"):
+def transcribe_audio(
+    audio_path,
+    language_code="indic-auto",
+    *,
+    output_mode="transcribe",
+    keyterms=None,
+    topic=None,
+    speaker_names=None,
+):
     """Transcribe an audio file using Gnani Prisma v3."""
 
     path = Path(audio_path)
@@ -38,9 +48,14 @@ def transcribe_audio(audio_path, language_code="indic-auto"):
     data = {
         "model": "prisma-v3.0",
         "language_code": language_code,
-        "multi_lang_codes": "en-IN,hi-IN,kn-IN",
-        "format": "transcribe",
+        "format": output_mode,
     }
+    if keyterms:
+        data["keyterms"] = json.dumps(list(keyterms), ensure_ascii=False)
+    if topic:
+        data["topic"] = topic
+    if speaker_names:
+        data["speaker_names"] = json.dumps(list(speaker_names), ensure_ascii=False)
 
     with path.open("rb") as audio:
         response = requests.post(
@@ -61,8 +76,9 @@ def transcribe_audio(audio_path, language_code="indic-auto"):
 
     result = response.json()
 
-    if not result.get("success"):
-        raise RuntimeError(f"Prisma transcription failed: {result}")
+    if not isinstance(result, dict) or not result.get("success"):
+        # Avoid carrying a provider body or transcript in an exception string.
+        raise RuntimeError("Prisma transcription request was unsuccessful.")
 
     transcript = result.get("transcript")
 
@@ -131,3 +147,33 @@ def synthesize_speech(
         "language": language,
         "voice": voice,
     }
+
+
+def synthesize_speech_v25(text, language="en-IN", voice="Kaveri"):
+    """Return raw WAV bytes from the documented Timbre v2.5 REST endpoint."""
+    if not text or not text.strip():
+        raise ValueError("Speech text cannot be empty.")
+
+    payload = {
+        "text": text,
+        "voice": voice,
+        "model": "timbre-v2.5",
+        "language": language,
+        "language_code": language,
+        "lang": language,
+        "audio_config": {
+            "sample_rate": 48000,
+            "num_channels": 1,
+            "sample_width": 2,
+            "encoding": "linear_pcm",
+            "container": "wav",
+        },
+    }
+    response = requests.post(
+        TIMBRE_V25_URL,
+        headers=_get_headers(json_content=True),
+        json=payload,
+        timeout=60,
+    )
+    response.raise_for_status()
+    return response.content

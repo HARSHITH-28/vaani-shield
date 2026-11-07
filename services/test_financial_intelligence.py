@@ -1,6 +1,8 @@
 
 from pprint import pprint
 
+from services.banking_service import get_customer_profile_by_key
+from services.database import initialize_database
 from services.financial_intelligence import (
     get_spending_summary,
     get_category_breakdown,
@@ -10,7 +12,12 @@ from services.financial_intelligence import (
     get_financial_insights
 )
 
-CUSTOMER_ID = 4
+initialize_database()
+CUSTOMER = get_customer_profile_by_key("demo-arjun")
+if CUSTOMER is None:
+    raise ValueError("Demo customer 'demo-arjun' was not found.")
+
+CUSTOMER_ID = CUSTOMER["customer_id"]
 
 print("\n===== SPENDING SUMMARY =====")
 pprint(get_spending_summary(CUSTOMER_ID))

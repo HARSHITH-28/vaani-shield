@@ -1,0 +1,3068 @@
+/* ==========================================================================
+   VAANISHIELD 2.0 — MODERN LIGHT INDIAN FINTECH DESIGN SYSTEM
+   "Intelligent Banking & Financial Security Platform"
+   Inspired by modern Indian fintech aesthetics (Navi, polished digital banking)
+   Blended Pale Lavender Gradient · Crisp White Cards · Restrained Violet Accent
+   Teal Secondary Accent · Deep Navy High-Readability Typography
+   ========================================================================== */
+
+:root {
+  /* Main Background: Clean, subtle light grey inspired by Axis Bank corporate banking */
+  --bg-app: #F8FAFC;
+  --bg-gradient-start: #F8FAFC;
+  --bg-gradient-mid: #F1F5F9;
+  --bg-gradient-end: #F1F5F9;
+  --bg-app-gradient: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%);
+
+  /* Surface Colors */
+  --bg-card: #FFFFFF;
+  --bg-card-elevated: #FFFFFF;
+  --bg-sidebar: #F8FAFC;
+  --bg-input: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F8FAFC;
+  --bg-hover: rgba(151, 20, 77, 0.05);
+
+  /* Brand Accents: Axis Bank-Inspired Deep Burgundy, Royal Navy & Restrained Violet */
+  --primary-violet: #97144D;
+  --primary-violet-dark: #7A0C3C;
+  --primary-violet-gradient: linear-gradient(135deg, #97144D 0%, #7A0C3C 100%);
+  --secondary-lavender: #0F172A;
+  --light-lavender: #FDF2F8;
+  --subtle-lavender: #FFF1F2;
+  --accent-teal: #0D9488;
+  --accent-teal-subtle: #F0FDFA;
+  --accent-burgundy: #97144D;
+  --accent-navy: #0F172A;
+
+  /* Status Colors */
+  --status-emerald: #059669;
+  --status-success-text: #065F46;
+  --status-success-bg: #ECFDF5;
+  --status-success-border: #A7F3D0;
+
+  --status-champagne: #D97706;
+  --status-warning-text: #92400E;
+  --status-warning-bg: #FFFBEB;
+  --status-warning-border: #FDE68A;
+
+  --status-coral: #DC2626;
+  --status-error-text: #991B1B;
+  --status-error-bg: #FEF2F2;
+  --status-error-border: #FECACA;
+
+  --status-info-blue: #2563EB;
+  --status-info-text: #1E40AF;
+  --status-info-bg: #EFF6FF;
+  --status-info-border: #BFDBFE;
+
+  /* Typography Colors (High Contrast Deep Navy / Dark Charcoal) */
+  --text-primary: #0F172A;
+  --text-main: #0F172A;
+  --text-secondary: #334155;
+  --text-muted: #64748B;
+  --text-inverse: #FFFFFF;
+
+  /* Borders & Shadows */
+  --border-light: #E2E8F0;
+  --border-medium: #CBD5E1;
+  --border-accent: rgba(151, 20, 77, 0.35);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 10px 25px rgba(15, 23, 42, 0.08);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+}
+
+/* ==========================================================================
+   GLOBAL BASE & LAYOUT (MODERN LIGHT FINTECH)
+   ========================================================================== */
+.stApp {
+  background-color: var(--bg-app) !important;
+  background-image: var(--bg-app-gradient) !important;
+  background-attachment: fixed !important;
+  color: var(--text-primary) !important;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.main .block-container {
+  padding-top: 1.25rem !important;
+  padding-bottom: 6rem !important;
+  max-width: 1560px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', sans-serif !important;
+  letter-spacing: -0.4px !important;
+  color: var(--text-primary) !important;
+  font-weight: 700 !important;
+}
+
+p, span, label, div {
+  color: inherit;
+}
+
+/* Streamlit Header Decoration */
+[data-testid="stHeader"] {
+  background: rgba(248, 250, 253, 0.9) !important;
+  backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid var(--border-light) !important;
+  z-index: 999 !important;
+}
+[data-testid="stSidebarNav"] { display: none !important; }
+
+/* ==========================================================================
+   LEVEL 1: PERSISTENT FULL-WIDTH TOP HEADER (CLEAN UTILITY HEADER)
+   Contains ONLY Brand, Personalized Greeting, Demo Badge, and Copilot Action
+   ========================================================================== */
+.st-key-profile-header {
+  position: relative;
+  z-index: 10;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-light) !important;
+  border-radius: var(--radius-lg) !important;
+  padding: 0.65rem 1.15rem !important;
+  margin-bottom: 1.15rem !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.st-key-profile-header [data-testid="stHorizontalBlock"] {
+  align-items: center !important;
+  gap: 0.75rem !important;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  background: linear-gradient(135deg, rgba(91, 77, 223, 0.15) 0%, rgba(91, 77, 223, 0.05) 100%);
+  border: 1px solid rgba(91, 77, 223, 0.3);
+  border-radius: 12px;
+  font-size: 1.35rem;
+  box-shadow: 0 2px 8px rgba(91, 77, 223, 0.12);
+}
+
+.brand-lockup span {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-lockup b {
+  font: 700 1.22rem 'Space Grotesk', sans-serif;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+  line-height: 1.15;
+}
+
+.brand-lockup small {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--secondary-lavender);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.profile-identity {
+  display: flex;
+  flex-direction: column;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--border-light);
+}
+
+.profile-identity strong {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.profile-identity span {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.demo-badge {
+  display: inline-block;
+  padding: 0.35rem 0.85rem;
+  background: rgba(91, 77, 223, 0.08);
+  border: 1px solid rgba(91, 77, 223, 0.25);
+  border-radius: var(--radius-full);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: var(--secondary-lavender);
+  text-align: center;
+}
+
+/* ==========================================================================
+   LEVEL 2: HORIZONTAL MAIN FEATURE NAVIGATION BAR
+   ========================================================================== */
+.st-key-main-nav-container,
+.st-key-main-nav-container-copilot-open {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-light) !important;
+  border-radius: var(--radius-lg) !important;
+  padding: 0.45rem 0.5rem !important;
+  margin-bottom: 1.35rem !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.st-key-main-nav-container [data-testid="stHorizontalBlock"],
+.st-key-main-nav-container-copilot-open [data-testid="stHorizontalBlock"] {
+  gap: 0.5rem !important;
+  align-items: center !important;
+}
+
+/* Level 2: Main Feature Navigation Buttons (Exactly ONE Clean Surface) */
+.st-key-main-nav-container div[data-testid="column"] button,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button {
+  min-height: 48px !important;
+  padding: 0.55rem 0.85rem !important;
+  border-radius: var(--radius-md) !important;
+  white-space: nowrap !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure inner structural containers do NOT render nested borders or backgrounds */
+.st-key-main-nav-container div[data-testid="column"] button *,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button * {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Typography applied to button and its text descendants */
+.st-key-main-nav-container div[data-testid="column"] button,
+.st-key-main-nav-container div[data-testid="column"] button p,
+.st-key-main-nav-container div[data-testid="column"] button span,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button p,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button span {
+  font-family: 'DM Sans', -apple-system, sans-serif !important;
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.25px !important;
+  line-height: 1.2 !important;
+}
+
+/* Inactive Main Feature Tab: High-contrast readable bold text */
+.st-key-main-nav-container div[data-testid="column"] button[kind="secondary"],
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="secondary"] {
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-light) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.st-key-main-nav-container div[data-testid="column"] button[kind="secondary"],
+.st-key-main-nav-container div[data-testid="column"] button[kind="secondary"] p,
+.st-key-main-nav-container div[data-testid="column"] button[kind="secondary"] span,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="secondary"],
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="secondary"] p,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="secondary"] span {
+  color: #1E293B !important;
+  font-weight: 700 !important;
+}
+
+.st-key-main-nav-container div[data-testid="column"] button[kind="secondary"]:hover,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="secondary"]:hover {
+  background: var(--subtle-lavender) !important;
+  border-color: rgba(151, 20, 77, 0.3) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.st-key-main-nav-container div[data-testid="column"] button[kind="secondary"]:hover p,
+.st-key-main-nav-container div[data-testid="column"] button[kind="secondary"]:hover span,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="secondary"]:hover p,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="secondary"]:hover span {
+  color: #97144D !important;
+}
+
+/* Active Main Feature Tab (Axis Burgundy & White Bold Text) */
+.st-key-main-nav-container div[data-testid="column"] button[kind="primary"],
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="primary"] {
+  background: linear-gradient(135deg, #97144D 0%, #7B103E 100%) !important;
+  border: 1px solid #7B103E !important;
+  box-shadow: 0 4px 12px rgba(151, 20, 77, 0.28) !important;
+}
+
+.st-key-main-nav-container div[data-testid="column"] button[kind="primary"],
+.st-key-main-nav-container div[data-testid="column"] button[kind="primary"] p,
+.st-key-main-nav-container div[data-testid="column"] button[kind="primary"] span,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="primary"],
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="primary"] p,
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button[kind="primary"] span {
+  color: #FFFFFF !important;
+  font-weight: 800 !important;
+}
+
+.page-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.page-heading span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--secondary-lavender);
+}
+
+.page-heading strong {
+  font: 700 1.65rem 'Space Grotesk', sans-serif;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+/* ==========================================================================
+   LEVEL 3: CONTEXTUAL SUBFEATURE SIDEBAR (LEFT)
+   ========================================================================== */
+[data-testid="stSidebar"] {
+  background-color: var(--bg-sidebar) !important;
+  background-image: linear-gradient(180deg, #F8FAFC 0%, #F1F4FA 100%) !important;
+  border-right: 1px solid var(--border-light) !important;
+  z-index: 1005 !important;
+  overflow: visible !important;
+}
+
+[data-testid="stSidebar"] > div {
+  padding: 1.25rem 1rem 1.75rem !important;
+  overflow: visible !important;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.sidebar-brand-mark {
+  font-size: 1.45rem;
+}
+
+.sidebar-brand-name {
+  display: block;
+  font: 700 1.15rem 'Space Grotesk', sans-serif;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.sidebar-brand-tag {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--secondary-lavender);
+  letter-spacing: 1.4px;
+}
+
+.sidebar-context-card {
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(91, 77, 223, 0.08);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md);
+}
+
+.sidebar-context-kicker {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: var(--secondary-lavender);
+  text-transform: uppercase;
+}
+
+.sidebar-context-title {
+  font: 700 1.05rem 'Space Grotesk', sans-serif;
+  color: var(--text-primary);
+  margin-top: 0.25rem;
+}
+
+/* ==========================================================================
+   LEVEL 3: CONTEXTUAL SUBFEATURE SIDEBAR NAVIGATION (LEFT)
+   ========================================================================== */
+
+/* Subfeature Navigation Button Container */
+[data-testid="stSidebar"] div.stButton {
+  margin-bottom: 0.25rem !important;
+}
+
+/* Subfeature Button Surface: Exactly ONE Visual Surface */
+[data-testid="stSidebar"] div.stButton > button {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  width: 100% !important;
+  min-height: 42px !important;
+  padding: 0.55rem 0.85rem !important;
+  border-radius: var(--radius-md) !important;
+  transition: all 0.16s ease-in-out !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure inner elements NEVER render nested borders, backgrounds, or padding */
+[data-testid="stSidebar"] div.stButton > button *,
+[data-testid="stSidebar"] div.stButton > button > div {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Subfeature Typography: applied cleanly to text elements */
+[data-testid="stSidebar"] div.stButton > button,
+[data-testid="stSidebar"] div.stButton > button p,
+[data-testid="stSidebar"] div.stButton > button span {
+  font-family: 'DM Sans', -apple-system, sans-serif !important;
+  font-size: 0.88rem !important;
+  letter-spacing: 0.15px !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+}
+
+/* Inactive Subfeature Button Surface */
+[data-testid="stSidebar"] div.stButton > button[kind="secondary"] {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+
+/* Inactive Subfeature Text: Crisp slate-700 with semibold 600 */
+[data-testid="stSidebar"] div.stButton > button[kind="secondary"],
+[data-testid="stSidebar"] div.stButton > button[kind="secondary"] p,
+[data-testid="stSidebar"] div.stButton > button[kind="secondary"] span {
+  color: #334155 !important;
+  font-weight: 600 !important;
+}
+
+/* Inactive Subfeature Hover: Single subtle surface highlight */
+[data-testid="stSidebar"] div.stButton > button[kind="secondary"]:hover {
+  background: rgba(151, 20, 77, 0.06) !important;
+  border-color: rgba(151, 20, 77, 0.18) !important;
+  transform: translateX(2px) !important;
+}
+
+[data-testid="stSidebar"] div.stButton > button[kind="secondary"]:hover p,
+[data-testid="stSidebar"] div.stButton > button[kind="secondary"]:hover span {
+  color: #97144D !important;
+  font-weight: 700 !important;
+}
+
+/* Active Subfeature Button Surface: Axis Burgundy theme with exactly ONE left border */
+[data-testid="stSidebar"] div.stButton > button[kind="primary"] {
+  background: #FDF2F8 !important;
+  border: 1px solid #FBCFE8 !important;
+  border-left: 4px solid #97144D !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* Active Subfeature Text: Bold 700 Axis Burgundy */
+[data-testid="stSidebar"] div.stButton > button[kind="primary"],
+[data-testid="stSidebar"] div.stButton > button[kind="primary"] p,
+[data-testid="stSidebar"] div.stButton > button[kind="primary"] span {
+  color: #97144D !important;
+  font-weight: 700 !important;
+}
+
+/* Active Subfeature Hover */
+[data-testid="stSidebar"] div.stButton > button[kind="primary"]:hover {
+  background: #FCE7F3 !important;
+  border-color: #F9A8D4 !important;
+  border-left: 4px solid #7A0C3C !important;
+}
+
+[data-testid="stSidebar"] div.stButton > button[kind="primary"]:hover p,
+[data-testid="stSidebar"] div.stButton > button[kind="primary"]:hover span {
+  color: #7A0C3C !important;
+}
+
+/* Sidebar Preferences & Demo Profile Popover Triggers */
+[data-testid="stSidebar"] div[data-testid="stPopover"] {
+  margin-top: 0.35rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+[data-testid="stSidebar"] div[data-testid="stPopover"] > button {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  width: 100% !important;
+  min-height: 40px !important;
+  padding: 0.5rem 0.85rem !important;
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-light) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: all 0.16s ease !important;
+  box-sizing: border-box !important;
+}
+
+[data-testid="stSidebar"] div[data-testid="stPopover"] > button * {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+[data-testid="stSidebar"] div[data-testid="stPopover"] > button,
+[data-testid="stSidebar"] div[data-testid="stPopover"] > button p,
+[data-testid="stSidebar"] div[data-testid="stPopover"] > button span {
+  font-family: 'DM Sans', -apple-system, sans-serif !important;
+  font-size: 0.86rem !important;
+  font-weight: 600 !important;
+  color: #1E293B !important;
+}
+
+[data-testid="stSidebar"] div[data-testid="stPopover"] > button:hover {
+  border-color: rgba(151, 20, 77, 0.3) !important;
+  background: #FFF1F2 !important;
+}
+
+/* ==========================================================================
+   PREMIUM BALANCE HERO CARD (AXIS BANK-INSPIRED EXECUTIVE BANKING HERO)
+   ========================================================================== */
+.fintech-hero-card {
+  position: relative;
+  border-radius: var(--radius-lg);
+  padding: 1px;
+  background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 45%, #4C0519 100%);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(151, 20, 77, 0.1);
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+}
+
+.hero-card-inner {
+  position: relative;
+  border-radius: calc(var(--radius-lg) - 1px);
+  padding: 1.5rem 1.85rem 1.4rem;
+  background: 
+    radial-gradient(ellipse at 90% 12%, rgba(151, 20, 77, 0.25), transparent 48%),
+    radial-gradient(ellipse at 10% 88%, rgba(30, 27, 75, 0.35), transparent 48%),
+    linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #2D081F 100%);
+  color: #FFFFFF;
+  overflow: hidden;
+}
+
+.hero-card-glow {
+  position: absolute;
+  top: -40%;
+  left: -40%;
+  width: 180%;
+  height: 180%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.hero-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.35rem;
+}
+
+.hero-brand-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.hero-bank-icon { font-size: 1.45rem; }
+
+.hero-bank-title {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  color: #E2E8F0;
+}
+
+.hero-account-badge {
+  display: block;
+  font-size: 0.72rem;
+  color: #A7F3D0;
+  font-weight: 600;
+}
+
+.emv-chip {
+  width: 36px;
+  height: 26px;
+  background: linear-gradient(135deg, #E6B866 0%, #C99638 100%);
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.hero-balance-section {
+  margin-bottom: 1.35rem;
+}
+
+.hero-balance-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: #CBD5E1;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.hero-balance-amount {
+  font: 700 clamp(1.75rem, 2.5vw, 2.35rem) 'Space Grotesk', -apple-system, sans-serif !important;
+  color: #FFFFFF !important;
+  letter-spacing: -0.5px;
+  line-height: 1.15;
+  margin: 0 0 0.35rem 0 !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+.hero-account-num {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.88rem;
+  letter-spacing: 2px;
+  color: #E2E8F0;
+}
+
+.hero-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 0.85rem;
+}
+
+.hero-meta-label {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #94A3B8;
+  margin-bottom: 0.15rem;
+}
+
+.hero-meta-val {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.hero-inflow-val {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #34D399;
+}
+
+.hero-rupay-tag {
+  font: 700 1.05rem 'Space Grotesk', sans-serif;
+  color: #FFFFFF;
+  letter-spacing: 0.5px;
+}
+
+/* ==========================================================================
+   FINTECH TRANSACTION ROWS & CARDS
+   ========================================================================== */
+.fintech-tx-table-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.fintech-tx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.15rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.16s ease;
+}
+
+.fintech-tx-row:hover {
+  border-color: var(--primary-violet);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.tx-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.tx-icon-badge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--light-lavender);
+  font-size: 1.15rem;
+}
+
+.tx-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.tx-merchant {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tx-meta {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.tx-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
+.tx-amount {
+  font: 700 1.05rem 'Space Grotesk', sans-serif;
+}
+
+.tx-amount.debit { color: var(--status-coral); }
+.tx-amount.credit { color: var(--status-emerald); }
+
+.tx-status-pill {
+  font-size: 0.64rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.tx-status-pill.status-success {
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+  border: 1px solid var(--status-success-border);
+}
+
+/* ==========================================================================
+   NARROW CHAT TRANSACTION CARDS (Assistant Copilot Panel)
+   ========================================================================== */
+.chat-tx-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.5rem 0;
+  width: 100%;
+}
+
+.chat-tx-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.72rem 0.95rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-tx-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-tx-merchant {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.chat-tx-icon { font-size: 1rem; }
+
+.chat-tx-name {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-tx-amt {
+  font: 700 0.96rem 'Space Grotesk', sans-serif;
+  flex: 0 0 auto;
+}
+
+.chat-tx-amt.debit { color: var(--status-coral); }
+.chat-tx-amt.credit { color: var(--status-emerald); }
+
+.chat-tx-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.chat-tx-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  letter-spacing: 0.5px;
+}
+
+.chat-tx-badge.status-success {
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+}
+
+/* Guard against table overflow in assistant */
+.st-key-floating-assistant-dock table,
+.st-key-floating-assistant-panel table,
+[data-testid="stChatMessage"] table {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  white-space: nowrap !important;
+  font-size: 0.82rem !important;
+}
+
+/* ==========================================================================
+   LOAN CARDS (ACTIVE & CLOSED)
+   ========================================================================== */
+.fintech-loan-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 1.35rem 1.6rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.16s ease;
+}
+
+.fintech-loan-card.active-loan {
+  border-left: 5px solid var(--primary-violet);
+}
+
+.fintech-loan-card.closed-loan {
+  border-left: 5px solid var(--status-emerald);
+  background: #FCFCFE;
+}
+
+.loan-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.loan-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  display: inline-block;
+  margin-bottom: 0.25rem;
+}
+
+.loan-badge.active { color: var(--primary-violet); }
+.loan-badge.closed { color: var(--status-emerald); }
+
+.loan-amount-primary {
+  font: 700 clamp(1.35rem, 2vw, 1.65rem) 'Space Grotesk', sans-serif !important;
+  color: var(--text-primary) !important;
+  margin: 0 !important;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.loan-amount-primary small {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.loan-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+}
+
+.status-pill {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  letter-spacing: 1px;
+}
+
+.status-pill.status-active {
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+  border: 1px solid var(--status-success-border);
+}
+
+.status-pill.status-closed {
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #CBD5E1;
+}
+
+.loan-emi-callout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  background: rgba(151, 20, 77, 0.06);
+  border: 1px solid rgba(151, 20, 77, 0.18);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
+.emi-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--primary-violet);
+  text-transform: uppercase;
+}
+
+.emi-val {
+  font: 700 0.95rem 'Space Grotesk', sans-serif;
+  color: var(--primary-violet-dark);
+}
+
+.loan-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 0.85rem;
+}
+
+.loan-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.detail-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.detail-val {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.detail-val.accent-teal { color: var(--accent-teal); }
+.detail-val.accent-violet { color: var(--primary-violet); }
+.detail-val.accent-emerald { color: var(--status-emerald); }
+
+.loan-progress-wrap {
+  margin-top: 0.5rem;
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+/* ==========================================================================
+   VOICE WAKE-WORD STATUS BAR
+   ========================================================================== */
+.wake-word-status-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.65rem 0.9rem;
+  margin-top: 0.65rem;
+  background: var(--light-lavender);
+  border: 1px solid rgba(91, 77, 223, 0.3);
+  border-radius: var(--radius-md);
+}
+
+.wake-word-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.wake-word-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-emerald);
+  box-shadow: 0 0 8px rgba(5, 150, 105, 0.6);
+  animation: pulse-dot 1.8s infinite;
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  50% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.7; }
+}
+
+.wake-word-text {
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.wake-word-sub {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   COPILOT DOCK & EDGE-STYLE ASSISTANT PANEL
+   ========================================================================== */
+.st-key-floating-assistant-dock {
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-accent) !important;
+  border-radius: 20px !important;
+  padding: 0 !important;
+  box-shadow: var(--shadow-lg) !important;
+  position: sticky !important;
+  top: 1rem !important;
+  height: calc(100vh - 2.5rem) !important;
+  max-height: calc(100vh - 2.5rem) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+:root {
+  --copilot-dock-w: clamp(460px, 33vw, 560px);
+  --copilot-dock-reserve: calc(clamp(460px, 33vw, 560px) + 2rem);
+}
+
+.st-key-floating-assistant-panel {
+  position: fixed !important;
+  z-index: 100000 !important;
+  right: 1.5rem !important;
+  bottom: 1.5rem !important;
+  width: var(--copilot-dock-w, clamp(460px, 33vw, 560px)) !important;
+  height: clamp(600px, 82vh, 88vh) !important;
+  max-height: calc(100vh - 3rem) !important;
+  max-width: calc(100vw - 3rem) !important;
+  min-height: 0 !important;
+  border: 1px solid #E5E7EB !important;
+  border-radius: 20px !important;
+  padding: 0 !important;
+  background: #FFFFFF !important;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.05) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  overflow: hidden !important;
+  gap: 0 !important;
+}
+
+/* ==========================================================================
+   RESPONSIVE DASHBOARD ADJUSTMENT WHEN FLOATING COPILOT OPENS / CLOSES
+   ========================================================================== */
+
+/* Main Navigation Bar When Copilot is Open:
+   Reserves horizontal space for Copilot so tabs reflow cleanly */
+.st-key-main-nav-container-copilot-open {
+  width: calc(100% - var(--copilot-dock-reserve)) !important;
+  max-width: calc(100% - var(--copilot-dock-reserve)) !important;
+  margin-right: auto !important;
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.st-key-main-nav-container-copilot-open [data-testid="stHorizontalBlock"] {
+  flex-wrap: wrap !important;
+  gap: 0.35rem !important;
+}
+
+.st-key-main-nav-container-copilot-open div[data-testid="column"] {
+  min-width: 135px !important;
+  flex: 1 1 135px !important;
+}
+
+.st-key-main-nav-container-copilot-open div[data-testid="column"] button {
+  white-space: normal !important;
+  font-size: 0.8rem !important;
+  padding: 0.45rem 0.55rem !important;
+  min-height: 42px !important;
+  text-align: center !important;
+}
+
+/* Feature Workspace Container When Copilot is Open:
+   Automatically adjusts available dashboard content area, reserving space
+   so no cards, tables, charts, or right-side sections are hidden behind Copilot */
+.st-key-banking-workspace-copilot-open {
+  width: calc(100% - var(--copilot-dock-reserve)) !important;
+  max-width: calc(100% - var(--copilot-dock-reserve)) !important;
+  margin-right: auto !important;
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Feature Workspace Container When Copilot is Closed:
+   Smoothly restores dashboard to natural 100% full-width arrangement */
+.st-key-banking-workspace-copilot-closed {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-right: auto !important;
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Shared Multi-Column Section Reflow When Copilot is Open:
+   Intelligently reflows cards, columns and metrics without clipping or horizontal overflow */
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"] {
+  flex-wrap: wrap !important;
+  gap: 0.75rem !important;
+}
+
+.st-key-banking-workspace-copilot-open div[data-testid="column"] {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Metric columns in overview, cards, and financial intelligence */
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
+  flex-wrap: wrap !important;
+  gap: 0.65rem !important;
+}
+
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) > div[data-testid="column"],
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(.st-key-toggle-balance-vis-btn) > div[data-testid="column"] {
+  min-width: 125px !important;
+  flex: 1 1 125px !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Metric card container: compact padding and contained overflow without clipping */
+.st-key-banking-workspace-copilot-open div[data-testid="stMetric"] {
+  padding: 0.65rem 0.75rem !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Metric values and labels: NEVER clip or truncate financial values */
+.st-key-banking-workspace-copilot-open div[data-testid="stMetricValue"],
+.st-key-banking-workspace-copilot-open div[data-testid="stMetricValue"] > div,
+.st-key-banking-workspace-copilot-open div[data-testid="stMetricValue"] * {
+  font-family: 'Space Grotesk', -apple-system, sans-serif !important;
+  font-size: clamp(0.95rem, 1.35vw, 1.25rem) !important;
+  font-weight: 700 !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.2 !important;
+  color: var(--text-primary) !important;
+}
+
+.st-key-banking-workspace-copilot-open div[data-testid="stMetricLabel"],
+.st-key-banking-workspace-copilot-open div[data-testid="stMetricLabel"] *,
+.st-key-banking-workspace-copilot-open div[data-testid="stMetricLabel"] label,
+.st-key-banking-workspace-copilot-open div[data-testid="stMetricLabel"] p,
+.st-key-banking-workspace-copilot-open div[data-testid="stMetricLabel"] span {
+  font-size: 0.7rem !important;
+  font-weight: 600 !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.25 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  color: var(--text-muted) !important;
+}
+
+/* Quick Action Buttons Row (Overview) */
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(.st-key-toggle-balance-vis-btn) button {
+  font-size: 0.76rem !important;
+  padding: 0.45rem 0.55rem !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  line-height: 1.2 !important;
+}
+
+/* Overview Columns Reflow: Stack Recent Transactions (left) and Active Accounts & Health (right) */
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(.acct-summary-item) > div[data-testid="column"]:first-child {
+  min-width: 280px !important;
+  flex: 1 1 100% !important;
+}
+
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(.acct-summary-item) > div[data-testid="column"]:last-child {
+  min-width: 280px !important;
+  flex: 1 1 100% !important;
+}
+
+/* Cards Page: Stack Virtual Card (left) and Financial Limits / Controls (right) seamlessly */
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(.acct-status-pill) > div[data-testid="column"]:first-child {
+  min-width: 280px !important;
+  flex: 1 1 100% !important;
+  max-width: 440px !important;
+}
+
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(.acct-status-pill) > div[data-testid="column"]:last-child {
+  min-width: 280px !important;
+  flex: 1 1 100% !important;
+  max-width: 100% !important;
+}
+
+/* Accounts Page: Stack external linking & KYC status cleanly */
+.st-key-banking-workspace-copilot-open div[data-testid="stHorizontalBlock"]:has(.status-approved) > div[data-testid="column"] {
+  min-width: 260px !important;
+  flex: 1 1 100% !important;
+}
+
+/* Transactions Explorer Filters */
+.st-key-banking-workspace-copilot-open form div[data-testid="column"] {
+  min-width: 120px !important;
+  flex: 1 1 120px !important;
+}
+
+/* Ensure buttons and headings wrap naturally without horizontal overflow */
+.st-key-banking-workspace-copilot-open button {
+  white-space: normal !important;
+  word-break: break-word !important;
+  line-height: 1.25 !important;
+}
+
+.st-key-banking-workspace-copilot-open h1,
+.st-key-banking-workspace-copilot-open h2,
+.st-key-banking-workspace-copilot-open h3,
+.st-key-banking-workspace-copilot-open h4,
+.st-key-banking-workspace-copilot-open p,
+.st-key-banking-workspace-copilot-open .caption-muted {
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Tables and DataFrames horizontal scroll if needed without bursting layout */
+.st-key-banking-workspace-copilot-open div[data-testid="stDataFrame"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+}
+
+/* Loans Detail Grid & Header Reflow When Copilot is Open */
+.st-key-banking-workspace-copilot-open .loan-card-header {
+  flex-wrap: wrap !important;
+  gap: 0.75rem !important;
+}
+
+.st-key-banking-workspace-copilot-open .loan-amount-primary {
+  font-size: clamp(1.35rem, 2vw, 1.75rem) !important;
+  word-break: break-word !important;
+}
+
+.st-key-banking-workspace-copilot-open .loan-details-grid {
+  grid-template-columns: repeat(2, minmax(130px, 1fr)) !important;
+  gap: 0.65rem !important;
+}
+
+/* Responsive adaptations for medium/narrow desktop screens (<= 1280px) */
+@media (max-width: 1280px) {
+  :root {
+    --copilot-dock-w: clamp(380px, 35vw, 450px);
+    --copilot-dock-reserve: calc(clamp(380px, 35vw, 450px) + 1.5rem);
+  }
+  .st-key-floating-assistant-panel {
+    width: clamp(380px, 35vw, 450px) !important;
+    right: 1rem !important;
+    bottom: 1rem !important;
+  }
+  .st-key-banking-workspace-copilot-open,
+  .st-key-main-nav-container-copilot-open {
+    width: calc(100% - clamp(380px, 35vw, 450px) - 1.5rem) !important;
+    max-width: calc(100% - clamp(380px, 35vw, 450px) - 1.5rem) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .st-key-floating-assistant-panel {
+    width: calc(100vw - 1.5rem) !important;
+    right: 0.75rem !important;
+    bottom: 0.75rem !important;
+    height: calc(100vh - 1.5rem) !important;
+    border-radius: 16px !important;
+  }
+  .st-key-banking-workspace-copilot-open,
+  .st-key-main-nav-container-copilot-open {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Non-blocking Floating Copilot Panel: Dashboard remains 100% interactive and sharp */
+
+.st-key-floating-assistant-header {
+  position: sticky;
+  top: -1.1rem;
+  z-index: 10;
+  padding: 0.5rem 0.5rem 0.5rem;
+  margin: -1.1rem -0.2rem 0.5rem;
+  background: #FFFFFF;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.st-key-floating-assistant-header div[data-testid="stHorizontalBlock"] {
+  align-items: center !important;
+  gap: 0.4rem !important;
+}
+
+.st-key-floating-assistant-header div[data-testid="stSelectbox"] {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.st-key-floating-assistant-header div[data-testid="stSelectbox"] > div {
+  min-height: 32px !important;
+  height: 32px !important;
+}
+
+.st-key-floating-assistant-header div[data-testid="stSelectbox"] div[role="combobox"] {
+  min-height: 32px !important;
+  height: 32px !important;
+  padding: 2px 6px !important;
+  font-size: 0.78rem !important;
+}
+
+.copilot-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.copilot-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-emerald);
+  box-shadow: 0 0 8px rgba(5, 150, 105, 0.4);
+}
+
+.copilot-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.copilot-badge {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--secondary-lavender);
+  background: var(--light-lavender);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+/* Copilot Welcome Card */
+.copilot-welcome-card {
+  text-align: center;
+  padding: 1.25rem 1rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.welcome-avatar {
+  font-size: 2.2rem;
+  margin-bottom: 0.35rem;
+}
+
+.welcome-greeting {
+  font: 700 1.35rem 'Space Grotesk', sans-serif !important;
+  color: var(--text-primary) !important;
+  margin: 0 0 0.35rem 0 !important;
+}
+
+.welcome-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0 !important;
+}
+
+.welcome-prompt-heading {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+/* ==========================================================================
+   VAANI AI CHAT MESSAGE VISIBILITY & HIGH CONTRAST (LIGHT THEME)
+   ========================================================================== */
+
+/* Universal Chat Message Containers */
+[data-testid="stChatMessage"] {
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 14px !important;
+  background: #FFFFFF !important;
+  color: #172033 !important;
+  padding: 1rem 1.25rem !important;
+  margin: 0.85rem 0 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05) !important;
+  opacity: 1 !important;
+}
+
+/* Force dark readable text on all message content elements */
+[data-testid="stChatMessage"] p,
+[data-testid="stChatMessageContent"] p,
+[data-testid="stChatMessage"] div,
+[data-testid="stChatMessageContent"] div,
+[data-testid="stChatMessage"] span,
+[data-testid="stChatMessageContent"] span,
+[data-testid="stChatMessage"] li,
+[data-testid="stChatMessageContent"] li,
+.stChatMessage p,
+.stChatMessage span {
+  color: #172033 !important;
+  font-size: 0.94rem !important;
+  line-height: 1.55 !important;
+  opacity: 1 !important;
+}
+
+/* Headings inside messages */
+[data-testid="stChatMessage"] h1,
+[data-testid="stChatMessage"] h2,
+[data-testid="stChatMessage"] h3,
+[data-testid="stChatMessage"] h4,
+[data-testid="stChatMessage"] h5,
+[data-testid="stChatMessage"] h6 {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+/* Strong / Bold elements */
+[data-testid="stChatMessage"] strong,
+[data-testid="stChatMessage"] b,
+[data-testid="stChatMessageContent"] strong,
+[data-testid="stChatMessageContent"] b {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+
+/* Links inside messages */
+[data-testid="stChatMessage"] a,
+[data-testid="stChatMessageContent"] a {
+  color: #4F46E5 !important;
+  font-weight: 600 !important;
+  text-decoration: underline !important;
+}
+
+/* Code blocks & inline code inside messages */
+[data-testid="stChatMessage"] code,
+[data-testid="stChatMessageContent"] code {
+  background: #F1F5F9 !important;
+  color: #0F172A !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 4px !important;
+  padding: 0.15rem 0.35rem !important;
+  font-family: 'Space Grotesk', monospace !important;
+  font-size: 0.88rem !important;
+}
+
+[data-testid="stChatMessage"] pre,
+[data-testid="stChatMessageContent"] pre {
+  background: #F8FAFC !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 8px !important;
+  padding: 0.75rem !important;
+}
+
+/* Tables inside chat messages */
+[data-testid="stChatMessage"] table,
+[data-testid="stChatMessageContent"] table {
+  background: #FFFFFF !important;
+  color: #172033 !important;
+  border: 1px solid #CBD5E1 !important;
+  border-collapse: collapse !important;
+  border-radius: 8px !important;
+  margin: 0.65rem 0 !important;
+  width: 100% !important;
+}
+
+[data-testid="stChatMessage"] th,
+[data-testid="stChatMessageContent"] th {
+  background: #F8FAFC !important;
+  color: #0F172A !important;
+  font-weight: 700 !important;
+  padding: 0.55rem 0.75rem !important;
+  border-bottom: 2px solid #CBD5E1 !important;
+  border-right: 1px solid #E2E8F0 !important;
+  text-align: left !important;
+}
+
+[data-testid="stChatMessage"] td,
+[data-testid="stChatMessageContent"] td {
+  color: #172033 !important;
+  padding: 0.5rem 0.75rem !important;
+  border-bottom: 1px solid #E2E8F0 !important;
+  border-right: 1px solid #E2E8F0 !important;
+}
+
+/* User Message Bubble Specific Styling */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
+  background: #EEF2FF !important;
+  border: 1.5px solid #C7D2FE !important;
+  color: #1E1B4B !important;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.08) !important;
+}
+
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) p,
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) span,
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) strong {
+  color: #1E1B4B !important;
+}
+
+/* Metadata, Detected Language, Captions & Response Tags */
+[data-testid="stChatMessage"] [data-testid="stCaptionContainer"],
+[data-testid="stChatMessage"] [data-testid="stCaptionContainer"] p,
+[data-testid="stChatMessage"] small,
+.st-key-floating-assistant-dock .stCaption,
+.st-key-floating-assistant-panel .stCaption {
+  color: #475569 !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+  opacity: 1 !important;
+}
+
+/* Message Controls & Action Buttons (Delete, Feedback, Retry) */
+[data-testid="stChatMessage"] button,
+.st-key-floating-assistant-dock button:not([kind="primary"]),
+.st-key-floating-assistant-panel button:not([kind="primary"]) {
+  background: #FFFFFF !important;
+  color: #475569 !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 6px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  opacity: 1 !important;
+  transition: all 0.15s ease !important;
+}
+
+[data-testid="stChatMessage"] button:hover {
+  background: #FEF2F2 !important;
+  color: #DC2626 !important;
+  border-color: #FECACA !important;
+}
+
+/* Floating Assistant Header & Language Selector */
+.st-key-floating-assistant-header {
+  border-bottom: 1px solid #E2E8F0 !important;
+  padding-bottom: 0.65rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.st-key-floating-assistant-header .copilot-title {
+  color: #0F172A !important;
+  font-weight: 800 !important;
+  font-size: 1.15rem !important;
+}
+
+.st-key-floating-assistant-header p,
+.st-key-floating-assistant-header span,
+.st-key-floating-assistant-header small {
+  color: #475569 !important;
+}
+
+/* ==========================================================================
+   COPILOT TOGGLE BUTTON (TOP HEADER)
+   ========================================================================== */
+.st-key-header-copilot-toggle,
+.st-key-header-copilot-toggle > button,
+div[data-testid="stButton"].st-key-header-copilot-toggle > button {
+  background: #EEF2FF !important;
+  color: #4F46E5 !important;
+  border: 1.5px solid #C7D2FE !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  font-size: 0.92rem !important;
+  padding: 0.52rem 1.1rem !important;
+  min-height: 42px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.45rem !important;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.12) !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+  transition: all 0.18s ease-in-out !important;
+}
+
+.st-key-header-copilot-toggle > button:hover,
+div[data-testid="stButton"].st-key-header-copilot-toggle > button:hover {
+  background: #4F46E5 !important;
+  color: #FFFFFF !important;
+  border-color: #4338CA !important;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.28) !important;
+  transform: translateY(-1px) !important;
+}
+
+.st-key-header-copilot-toggle > button:active,
+div[data-testid="stButton"].st-key-header-copilot-toggle > button:active {
+  background: #3730A3 !important;
+  color: #FFFFFF !important;
+  transform: translateY(0) !important;
+}
+
+.st-key-header-copilot-toggle > button:focus-visible,
+div[data-testid="stButton"].st-key-header-copilot-toggle > button:focus-visible {
+  outline: 2px solid #4F46E5 !important;
+  outline-offset: 2px !important;
+}
+
+/* Active / Dock Open state */
+.st-key-header-copilot-toggle > button[kind="primary"],
+div[data-testid="stButton"].st-key-header-copilot-toggle > button[kind="primary"] {
+  background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%) !important;
+  color: #FFFFFF !important;
+  border-color: #312E81 !important;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.32) !important;
+}
+
+/* ==========================================================================
+   METRIC CARDS & STREAMLIT WIDGET OVERRIDES (LIGHT FINTECH)
+   ========================================================================== */
+div[data-testid="stMetric"] {
+  background: #FFFFFF !important;
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 12px !important;
+  padding: 1rem 1.15rem !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05) !important;
+  min-width: 0 !important;
+  overflow: visible !important;
+  transition: all 0.18s ease !important;
+}
+
+div[data-testid="stMetric"]:hover {
+  border-color: var(--primary-violet) !important;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.12) !important;
+}
+
+div[data-testid="stMetricLabel"],
+div[data-testid="stMetricLabel"] label,
+div[data-testid="stMetricLabel"] p,
+div[data-testid="stMetricLabel"] span {
+  color: #475569 !important;
+  font-size: 0.8rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.6px !important;
+  text-transform: uppercase !important;
+  opacity: 1 !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+}
+
+div[data-testid="stMetricValue"],
+div[data-testid="stMetricValue"] > div {
+  color: #172033 !important;
+  font-family: 'Space Grotesk', -apple-system, sans-serif !important;
+  font-size: clamp(1.15rem, 2vw, 1.45rem) !important;
+  font-weight: 800 !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  overflow: visible !important;
+  max-width: 100% !important;
+  line-height: 1.25 !important;
+}
+
+div[data-testid="stMetricDelta"],
+div[data-testid="stMetricDelta"] > div {
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+}
+
+/* Buttons */
+.stButton > button,
+[data-testid="stFormSubmitButton"] button {
+  border-radius: var(--radius-md) !important;
+  font-weight: 700 !important;
+  font-family: 'DM Sans', sans-serif !important;
+  padding: 0.58rem 1.25rem !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.stButton > button[kind="primary"],
+[data-testid="stFormSubmitButton"] button[kind="primary"] {
+  background: var(--primary-violet-gradient) !important;
+  border: 1px solid var(--primary-violet) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 14px rgba(91, 77, 223, 0.3) !important;
+}
+
+.stButton > button[kind="primary"]:hover,
+[data-testid="stFormSubmitButton"] button[kind="primary"]:hover {
+  background: linear-gradient(135deg, #6D5DE7 0%, #4E40D3 100%) !important;
+  box-shadow: 0 6px 18px rgba(91, 77, 223, 0.45) !important;
+  transform: translateY(-1px) !important;
+}
+
+.stButton > button[kind="secondary"],
+[data-testid="stFormSubmitButton"] button[kind="secondary"] {
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-medium) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.stButton > button[kind="secondary"]:hover,
+[data-testid="stFormSubmitButton"] button[kind="secondary"]:hover {
+  background: var(--subtle-lavender) !important;
+  border-color: var(--primary-violet) !important;
+  color: var(--primary-violet-dark) !important;
+}
+
+/* Form Controls & Inputs */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input,
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-testid="stTextArea"] textarea {
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-medium) !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--text-primary) !important;
+  min-height: 44px !important;
+}
+
+[data-testid="stTextInput"] input:focus,
+[data-testid="stNumberInput"] input:focus,
+[data-testid="stTextArea"] textarea:focus {
+  border-color: var(--primary-violet) !important;
+  box-shadow: 0 0 0 3px rgba(91, 77, 223, 0.2) !important;
+}
+
+/* Popover Content */
+div[data-testid="stPopoverBody"] {
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-medium) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Tables & Dataframes */
+[data-testid="stDataFrame"], [data-testid="stTable"] {
+  border: 1px solid var(--border-light) !important;
+  border-radius: var(--radius-md) !important;
+  background: #FFFFFF !important;
+  color: var(--text-primary) !important;
+}
+
+/* Account Opening Stepper */
+.fintech-stepper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.2rem 1.6rem;
+  margin: 0.75rem 0 1.4rem;
+  border-radius: var(--radius-lg);
+  background: #FFFFFF;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  overflow-x: auto;
+}
+
+.stepper-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  position: relative;
+  flex: 1 1 auto;
+}
+
+.stepper-bubble {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 700 0.92rem 'Space Grotesk', sans-serif;
+  transition: all 0.2s ease;
+}
+
+.stepper-item.completed .stepper-bubble {
+  background: var(--status-emerald);
+  color: #FFFFFF;
+  font-weight: 800;
+  box-shadow: 0 2px 10px rgba(5, 150, 105, 0.3);
+}
+
+.stepper-item.active .stepper-bubble {
+  background: var(--primary-violet);
+  color: #FFFFFF;
+  border: 3px solid rgba(91, 77, 223, 0.3);
+  box-shadow: 0 0 0 3px var(--primary-violet);
+}
+
+.stepper-item.upcoming .stepper-bubble {
+  background: #F8FAFC;
+  color: var(--text-muted);
+  border: 1px solid var(--border-medium);
+}
+
+.stepper-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.stepper-step-num {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.stepper-item.active .stepper-step-num { color: var(--secondary-lavender); }
+
+.stepper-label {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.stepper-item.active .stepper-label { color: var(--text-primary); }
+
+.stepper-line {
+  flex: 1 1 24px;
+  height: 2px;
+  background: var(--border-light);
+  margin: 0 0.85rem;
+}
+
+.stepper-item.completed .stepper-line {
+  background: var(--status-emerald);
+}
+
+/* Floating Launcher */
+.st-key-floating-assistant-launch {
+  position: fixed !important;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 10001;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(91, 77, 223, 0.35);
+}
+
+.st-key-floating-assistant-launch button {
+  min-height: 48px !important;
+  padding: 0.65rem 1.4rem !important;
+  font-weight: 800 !important;
+}
+
+/* ==========================================================================
+   AXIS BANK-INSPIRED FORM CONTROLS & COMPREHENSIVE HIGH-CONTRAST POLISH
+   ========================================================================== */
+
+/* Universal Dark Form Labels */
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] label,
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] span,
+label,
+.stTextInput label,
+.stSelectbox label,
+.stDateInput label,
+.stNumberInput label,
+.stTextArea label,
+.stFileUploader label,
+.stRadio label {
+  color: #172033 !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+  opacity: 1 !important;
+  display: inline-block !important;
+  margin-bottom: 0.25rem !important;
+}
+
+/* BaseWeb Selectbox and Dropdowns */
+div[data-baseweb="select"] > div {
+  background-color: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+  color: #172033 !important;
+}
+div[data-baseweb="select"] span {
+  color: #172033 !important;
+}
+/* BaseWeb Popovers, Layers, and Dropdowns: Highest Stacking Order to prevent layering behind page content */
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] > div,
+div[data-baseweb="layer"],
+div[data-testid="stPopoverBody"],
+div[data-testid="stPopoverContent"],
+div[data-testid="stPopover"] div[role="dialog"],
+ul[data-baseweb="menu"],
+div[data-baseweb="menu"] {
+  background-color: #FFFFFF !important;
+  color: #172033 !important;
+  border: 1px solid #CBD5E1 !important;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22), 0 4px 10px rgba(15, 23, 42, 0.08) !important;
+  z-index: 999999 !important;
+}
+
+/* Sidebar Specific Popovers (Assistant Preferences & Demo Profile) */
+[data-testid="stSidebar"] div[data-testid="stPopoverBody"] {
+  z-index: 999999 !important;
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-medium) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.25) !important;
+}
+li[data-baseweb="menu-item"] {
+  background-color: #FFFFFF !important;
+  color: #172033 !important;
+  font-size: 0.92rem !important;
+}
+li[data-baseweb="menu-item"]:hover,
+li[data-baseweb="menu-item"][aria-selected="true"] {
+  background-color: #EDE9FE !important;
+  color: #4F46E5 !important;
+  font-weight: 600 !important;
+}
+
+/* Streamlit Inputs */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input,
+[data-testid="stTextArea"] textarea {
+  background-color: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 8px !important;
+  color: #172033 !important;
+}
+
+[data-testid="stTextInput"] input:focus,
+[data-testid="stNumberInput"] input:focus,
+[data-testid="stDateInput"] input:focus,
+[data-testid="stTextArea"] textarea:focus {
+  border-color: #4F46E5 !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15) !important;
+  outline: none !important;
+}
+
+/* High-contrast Buttons */
+.stButton > button[kind="primary"],
+[data-testid="stFormSubmitButton"] button[kind="primary"] {
+  background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%) !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.28) !important;
+}
+
+.stButton > button[kind="secondary"],
+[data-testid="stFormSubmitButton"] button[kind="secondary"] {
+  background-color: #FFFFFF !important;
+  color: #172033 !important;
+  border: 1px solid #CBD5E1 !important;
+  font-weight: 600 !important;
+}
+
+.stButton > button:disabled,
+[data-testid="stFormSubmitButton"] button:disabled {
+  background-color: #F1F5F9 !important;
+  color: #94A3B8 !important;
+  border-color: #E2E8F0 !important;
+  cursor: not-allowed !important;
+  opacity: 0.7 !important;
+}
+
+/* Auth / Sign-in Card */
+.auth-container {
+  max-width: 480px;
+  margin: 2rem auto;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  padding: 2.2rem 2.4rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+.auth-brand-logo {
+  font-size: 2.2rem;
+  margin-bottom: 0.25rem;
+  text-align: center;
+}
+.auth-brand-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #172033;
+  text-align: center;
+  margin-bottom: 0.2rem;
+}
+.auth-brand-subtitle {
+  font-size: 0.88rem;
+  color: #64748B;
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+.auth-credential-pill {
+  background: #F8FAFC;
+  border: 1px dashed #CBD5E1;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-top: 1.25rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+/* Card Detail Section */
+.card-detail-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 1.5rem 1.6rem;
+  margin-top: 1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+}
+.card-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.2rem;
+  border-bottom: 1px solid #F1F5F9;
+  padding-bottom: 0.8rem;
+}
+.card-metric-block {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  text-align: left;
+}
+.card-metric-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.2rem;
+}
+.card-metric-value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #172033;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+/* Financial Intelligence Cards */
+.fin-hero-banner {
+  background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+  border: 1px solid #C7D2FE;
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.fin-callout {
+  background: #FEF3C7;
+  border-left: 4px solid #F59E0B;
+  padding: 0.9rem 1.1rem;
+  border-radius: 0 8px 8px 0;
+  margin: 1rem 0;
+  color: #92400E;
+  font-size: 0.9rem;
+}
+.fin-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 1.2rem 1.3rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+/* ==========================================================================
+   RESPONSIVE BREAKPOINTS
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .st-key-main-nav-container [data-testid="stHorizontalBlock"] {
+    flex-wrap: wrap !important;
+  }
+  .loan-details-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-card-inner {
+    padding: 1.25rem 1.25rem 1.15rem;
+  }
+  .hero-balance-amount {
+    font-size: 2rem !important;
+  }
+  .loan-details-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ==========================================================================
+   FINTECH INPUTS: CHAT INPUT & AUDIO INPUT STYLING
+   ========================================================================== */
+/* stChatInput styling */
+[data-testid="stChatInput"] {
+  background-color: transparent !important;
+  border-radius: 14px !important;
+  margin-top: 0.5rem !important;
+}
+
+[data-testid="stChatInput"] > div {
+  background-color: #FFFFFF !important;
+  border: 1.5px solid #CBD5E1 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05) !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+[data-testid="stChatInput"] > div:focus-within {
+  border-color: #4F46E5 !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2) !important;
+}
+
+[data-testid="stChatInput"] textarea {
+  color: #0F172A !important;
+  font-size: 0.95rem !important;
+  font-family: 'DM Sans', -apple-system, sans-serif !important;
+  background-color: transparent !important;
+}
+
+[data-testid="stChatInput"] textarea::placeholder {
+  color: #94A3B8 !important;
+  opacity: 1 !important;
+}
+
+[data-testid="stChatInput"] button {
+  background-color: #4F46E5 !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  border-radius: 8px !important;
+  transition: background-color 0.15s ease-in-out !important;
+}
+
+[data-testid="stChatInput"] button:hover {
+  background-color: #4338CA !important;
+}
+
+/* stAudioInput styling */
+[data-testid="stAudioInput"] {
+  background-color: #FFFFFF !important;
+  border: 1.5px solid #CBD5E1 !important;
+  border-radius: 12px !important;
+  padding: 0.6rem 0.8rem !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-testid="stAudioInput"] button {
+  border-radius: 50% !important;
+  border: none !important;
+  background-color: #4F46E5 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3) !important;
+}
+
+[data-testid="stAudioInput"] button:hover {
+  background-color: #4338CA !important;
+}
+
+/* Synthetic Disclosure Badges */
+.synthetic-disclosure-badge {
+  background: #EEF2FF;
+  border: 1px solid #C7D2FE;
+  border-radius: 10px;
+  padding: 0.75rem 1.15rem;
+  margin: 0.85rem 0 1.25rem 0;
+  font-size: 0.84rem;
+  color: #3730A3;
+  line-height: 1.45;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Loan card and details spacing */
+.fintech-loan-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 1.4rem 1.6rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+}
+
+.loan-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #F1F5F9;
+  padding-bottom: 0.75rem;
+}
+
+.loan-badge.active {
+  background: #EEF2FF;
+  color: #4F46E5;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.loan-amount-primary {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0.35rem 0 0 0;
+}
+.loan-amount-primary small {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748B;
+}
+
+/* ==========================================================================
+   CHATGPT-INSPIRED FLOATING COPILOT DESIGN LANGUAGE
+   ========================================================================== */
+[class*="st-key-floating-assistant-dock"],
+[class*="st-key-floating-assistant-panel"] {
+  background: #FFFFFF !important;
+  border: 1px solid #E5E7EB !important;
+  border-radius: 20px !important;
+  box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.18), 0 8px 16px -4px rgba(15, 23, 42, 0.08) !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+}
+
+[class*="st-key-floating-assistant-header"] {
+  flex: 0 0 auto !important;
+  position: relative !important;
+  top: 0 !important;
+  z-index: 60 !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  backdrop-filter: blur(12px) !important;
+  padding: 0.75rem 0.85rem 0.65rem 0.85rem !important;
+  margin: 0 !important;
+  border-bottom: 1px solid #F1F5F9 !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+
+.chatgpt-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.chatgpt-avatar-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.chatgpt-title-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.chatgpt-header-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+
+.chatgpt-online-status {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #059669;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.chatgpt-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10B981;
+  display: inline-block;
+}
+
+[class*="st-key-floating-assistant-close"] button {
+  background: transparent !important;
+  color: #64748B !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  min-height: 2rem !important;
+  height: 2rem !important;
+  padding: 0 0.5rem !important;
+  font-size: 1.05rem !important;
+  transition: all 0.15s ease !important;
+}
+
+[class*="st-key-floating-assistant-close"] button:hover {
+  background: #F1F5F9 !important;
+  color: #0F172A !important;
+  border-color: #E2E8F0 !important;
+}
+
+/* ChatGPT Message Cards inside Floating Panel */
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatMessage"],
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatMessage"] {
+  background: #FFFFFF !important;
+  border: 1px solid #E5E7EB !important;
+  border-radius: 14px !important;
+  padding: 0.85rem 1rem !important;
+  margin-bottom: 0.65rem !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  color: #111827 !important;
+}
+
+/* User Message: Clean Light Surface */
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]),
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]),
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatMessage"][aria-label*="user" i],
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatMessage"][aria-label*="user" i] {
+  background: #F3F4F6 !important;
+  border: 1px solid #E5E7EB !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+}
+
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatMessage"] p,
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatMessage"] span,
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatMessage"] div,
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatMessage"] li,
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatMessage"] p,
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatMessage"] span,
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatMessage"] div,
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatMessage"] li {
+  color: #111827 !important;
+}
+
+/* Collapsible Conversation History Expander */
+.st-key-floating-assistant-panel div[data-testid="stExpander"],
+.st-key-floating-assistant-dock div[data-testid="stExpander"] {
+  border: 1px solid #F1F5F9 !important;
+  border-radius: 10px !important;
+  margin: 0.3rem 0.2rem 0.5rem 0.2rem !important;
+  background: #F8FAFC !important;
+}
+
+.st-key-floating-assistant-panel div[data-testid="stExpander"] summary,
+.st-key-floating-assistant-dock div[data-testid="stExpander"] summary {
+  padding: 0.35rem 0.65rem !important;
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  color: #475569 !important;
+}
+
+.st-key-floating-assistant-panel div[data-testid="stExpander"] summary:hover,
+.st-key-floating-assistant-dock div[data-testid="stExpander"] summary:hover {
+  color: #1E293B !important;
+}
+
+.st-key-floating-assistant-panel div[data-testid="stExpander"] button,
+.st-key-floating-assistant-dock div[data-testid="stExpander"] button {
+  text-align: left !important;
+  font-size: 0.78rem !important;
+  padding: 0.35rem 0.6rem !important;
+  border-radius: 8px !important;
+  margin-bottom: 0.25rem !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Polished Chat Input & Mic Controls in Copilot */
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatInput"],
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatInput"] {
+  background: #FFFFFF !important;
+  border: 1.5px solid #CBD5E1 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+}
+
+[class*="st-key-floating-assistant-dock"] [data-testid="stChatInput"]:focus-within,
+[class*="st-key-floating-assistant-panel"] [data-testid="stChatInput"]:focus-within {
+  border-color: #6366F1 !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
+}
+
+.chat-text-prose {
+  color: #0F172A !important;
+  font-size: 0.9rem !important;
+  line-height: 1.55 !important;
+  margin: 0.35rem 0 !important;
+}
+
+.chat-text-prose strong {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+
+.chat-prose-line {
+  margin-bottom: 0.35rem;
+}
+
+.chat-prose-bullet {
+  padding-left: 0.5rem;
+  margin-bottom: 0.28rem;
+}
+
+/* ==========================================================================
+   NOTIFICATION CENTER (TOP HEADER POPOVER)
+   ========================================================================== */
+.notif-badge {
+  background: #EF4444;
+  color: #FFFFFF;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.notif-item {
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  margin-bottom: 0.5rem;
+  transition: all 0.15s ease-in-out;
+}
+
+.notif-item.notif-unread {
+  background: #F0F4FA;
+  border: 1px solid #BFDBFE;
+  border-left: 3.5px solid #2563EB;
+}
+
+.notif-item.notif-read {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  opacity: 0.78;
+}
+
+.notif-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: #0F172A;
+}
+
+.notif-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.notif-title {
+  flex: 1;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.notif-dot {
+  color: #2563EB;
+  font-size: 0.7rem;
+  animation: pulse-dot 1.8s infinite;
+}
+
+.notif-msg {
+  font-size: 0.8rem;
+  color: #334155;
+  margin: 0.25rem 0 0.3rem 1.45rem;
+  line-height: 1.4;
+}
+
+.notif-meta {
+  margin-left: 1.45rem;
+  color: #64748B;
+  font-size: 0.7rem;
+}
+
+/* ==========================================================================
+   PHASE 5: REBUILT CHATGPT-INSPIRED FLOATING COPILOT LAYOUT & COMPOSER
+   ========================================================================== */
+
+/* Inner panel vertical layout: Ensures header and composer are pinned, and messages scroll independently */
+.st-key-floating-assistant-panel,
+.st-key-floating-assistant-dock,
+.st-key-floating-assistant-panel > div[data-testid="stVerticalBlockBorderWrapper"],
+.st-key-floating-assistant-panel > div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stVerticalBlock"],
+.st-key-floating-assistant-dock > div[data-testid="stVerticalBlockBorderWrapper"],
+.st-key-floating-assistant-dock > div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stVerticalBlock"] {
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  gap: 0 !important;
+}
+
+/* Header & its Streamlit Layout Wrapper: Pinned at top */
+.st-key-floating-assistant-panel > div[data-testid="stLayoutWrapper"]:has(.st-key-floating-assistant-header),
+.st-key-floating-assistant-dock > div[data-testid="stLayoutWrapper"]:has(.st-key-floating-assistant-header) {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: fit-content !important;
+  width: 100% !important;
+}
+
+[class*="st-key-floating-assistant-header"] {
+  flex: 0 0 auto !important;
+  position: relative !important;
+  top: 0 !important;
+  z-index: 60 !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  backdrop-filter: blur(12px) !important;
+  padding: 0.75rem 0.85rem 0.65rem 0.85rem !important;
+  margin: 0 !important;
+  border-bottom: 1px solid #F1F5F9 !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+
+/* History Expander & Top Caption Elements: Pinned beneath header */
+.st-key-floating-assistant-panel > div[data-testid="stLayoutWrapper"]:has(div[data-testid="stExpander"]),
+.st-key-floating-assistant-dock > div[data-testid="stLayoutWrapper"]:has(div[data-testid="stExpander"]),
+.st-key-floating-assistant-panel > div[data-testid="stElementContainer"],
+.st-key-floating-assistant-dock > div[data-testid="stElementContainer"] {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: fit-content !important;
+}
+
+.st-key-floating-assistant-panel > div[data-testid="stElementContainer"] [data-testid="stCaptionContainer"],
+.st-key-floating-assistant-dock > div[data-testid="stElementContainer"] [data-testid="stCaptionContainer"] {
+  padding: 0.25rem 0.85rem 0.1rem 0.85rem !important;
+  margin: 0 !important;
+}
+
+.st-key-floating-assistant-panel div[data-testid="stExpander"] {
+  flex: 0 0 auto !important;
+  border: 1px solid #F1F5F9 !important;
+  border-radius: 10px !important;
+  margin: 0.35rem 0.65rem !important;
+  background: #F8FAFC !important;
+}
+
+/* Layout Wrapper around Conversation History: Must flex-grow and constrain height with min-height: 0 */
+.st-key-floating-assistant-panel > div[data-testid="stLayoutWrapper"]:has(> .st-key-copilot-chat-scroll-area),
+.st-key-floating-assistant-panel div[data-testid="stLayoutWrapper"]:has(> .st-key-copilot-chat-scroll-area),
+.st-key-floating-assistant-dock > div[data-testid="stLayoutWrapper"]:has(> .st-key-copilot-chat-scroll-area),
+.st-key-floating-assistant-dock div[data-testid="stLayoutWrapper"]:has(> .st-key-copilot-chat-scroll-area) {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  height: 100% !important;
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+/* Independent Scrollable Chat Area */
+.st-key-copilot-chat-scroll-area,
+.st-key-copilot-chat-scroll-area > div[data-testid="stVerticalBlockBorderWrapper"],
+.st-key-copilot-chat-scroll-area > div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stVerticalBlock"] {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  height: 100% !important;
+  width: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding: 0.65rem 0.85rem 1rem 0.85rem !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+}
+
+/* Prevent child message containers inside scroll area from shrinking or collapsing */
+.st-key-copilot-chat-scroll-area > div[data-testid="stLayoutWrapper"],
+.st-key-copilot-chat-scroll-area > div[data-testid="stElementContainer"],
+.st-key-copilot-chat-scroll-area > div:not([data-testid="stVerticalBlockBorderWrapper"]) {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  height: auto !important;
+  min-height: min-content !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+/* Dedicated Vertical Scrollbar Styling for Copilot Conversation History */
+.st-key-copilot-chat-scroll-area::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+.st-key-copilot-chat-scroll-area::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.st-key-copilot-chat-scroll-area::-webkit-scrollbar-thumb {
+  background: #CBD5E1 !important;
+  border-radius: 999px !important;
+}
+
+.st-key-copilot-chat-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8 !important;
+}
+
+/* Pinned Sticky Bottom Composer Wrapper & Container */
+.st-key-floating-assistant-panel > div[data-testid="stLayoutWrapper"]:has(> .st-key-copilot-sticky-composer),
+.st-key-floating-assistant-panel div[data-testid="stLayoutWrapper"]:has(> .st-key-copilot-sticky-composer),
+.st-key-floating-assistant-dock > div[data-testid="stLayoutWrapper"]:has(> .st-key-copilot-sticky-composer),
+.st-key-floating-assistant-dock div[data-testid="stLayoutWrapper"]:has(> .st-key-copilot-sticky-composer) {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: fit-content !important;
+  width: 100% !important;
+  margin-top: auto !important;
+}
+
+.st-key-copilot-sticky-composer {
+  flex: 0 0 auto !important;
+  position: relative !important;
+  bottom: 0 !important;
+  z-index: 50 !important;
+  background: #FFFFFF !important;
+  border-top: 1px solid #F1F5F9 !important;
+  padding: 0.65rem 0.85rem !important;
+  border-radius: 0 0 20px 20px !important;
+  margin: 0 !important;
+}
+
+/* Unified ChatGPT-Style Composer Pill Surface */
+.st-key-copilot-composer-pill {
+  background: #F9FAFB !important;
+  border: 1.5px solid #E5E7EB !important;
+  border-radius: 24px !important;
+  padding: 3px 6px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.2s ease !important;
+}
+
+.st-key-copilot-composer-pill:focus-within {
+  background: #FFFFFF !important;
+  border-color: #2563EB !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12) !important;
+}
+
+/* Horizontal block inside composer pill: all primary controls in 1 row */
+.st-key-copilot-composer-pill div[data-testid="stHorizontalBlock"] {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+
+.st-key-copilot-composer-pill div[data-testid="column"] {
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Text area in middle column expands */
+.st-key-copilot-composer-pill div[data-testid="column"]:nth-child(2) {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+}
+
+.st-key-copilot-composer-pill div[data-testid="column"]:nth-child(1),
+.st-key-copilot-composer-pill div[data-testid="column"]:nth-child(3),
+.st-key-copilot-composer-pill div[data-testid="column"]:nth-child(4) {
+  flex: 0 0 auto !important;
+  width: auto !important;
+}
+
+/* Text area inside unified pill */
+.st-key-copilot-composer-pill div[data-testid="stTextArea"] {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+.st-key-copilot-composer-pill div[data-testid="stTextArea"] textarea {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  resize: none !important;
+  padding: 4px 6px !important;
+  font-size: 0.88rem !important;
+  line-height: 1.4 !important;
+  color: #111827 !important;
+  min-height: 34px !important;
+  max-height: 100px !important;
+}
+
+.st-key-copilot-composer-pill div[data-testid="stTextArea"] textarea:focus {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Plus (+) Button on the Left: Clean circular icon, HIDE STREAMLIT CHEVRON */
+.st-key-composer_actions_popover > button {
+  background: transparent !important;
+  border: none !important;
+  color: #64748B !important;
+  width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  font-size: 1.25rem !important;
+  font-weight: 500 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.15s ease !important;
+}
+
+.st-key-composer_actions_popover > button:hover {
+  background: #E5E7EB !important;
+  color: #0F172A !important;
+}
+
+/* HIDE STREAMLIT CHEVRON DOWN ON PLUS POPOVER (Both SVG and Material Icon span) */
+.st-key-composer_actions_popover button svg,
+.st-key-composer_actions_popover button [data-testid="stIconMaterial"]:last-child:not(:first-child),
+.st-key-composer_actions_popover button > div > span:last-child:not(:first-child) {
+  display: none !important;
+}
+
+.st-key-composer_actions_popover button [data-testid="stIconMaterial"]:first-child {
+  font-size: 1.35rem !important;
+  line-height: 1 !important;
+  color: #475569 !important;
+}
+
+.st-key-composer_actions_popover button p,
+.st-key-composer_actions_popover button span {
+  margin: 0 !important;
+  font-size: 1.25rem !important;
+  line-height: 1 !important;
+}
+
+/* Microphone Toggle Button on Right */
+.st-key-copilot_mic_toggle_btn > button {
+  background: transparent !important;
+  border: none !important;
+  color: #64748B !important;
+  width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  font-size: 1.05rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.15s ease !important;
+}
+
+.st-key-copilot_mic_toggle_btn > button:hover {
+  background: #E5E7EB !important;
+  color: #0F172A !important;
+}
+
+/* Docked Compact Voice Tray directly above Composer Pill */
+.st-key-copilot-voice-tray {
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 14px !important;
+  padding: 0.45rem 0.75rem !important;
+  margin-bottom: 0.5rem !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+}
+
+.st-key-copilot-voice-tray div[data-testid="stHorizontalBlock"] {
+  align-items: center !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.voice-tray-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.45rem !important;
+}
+
+.voice-tray-title {
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  color: #1E293B !important;
+}
+
+.voice-tray-pulse {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: #EF4444 !important;
+  border-radius: 50% !important;
+  display: inline-block !important;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6) !important;
+}
+
+.st-key-btn_close_voice_tray > button {
+  background: transparent !important;
+  border: none !important;
+  color: #64748B !important;
+  font-size: 0.85rem !important;
+  line-height: 1 !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 0 !important;
+  border-radius: 4px !important;
+}
+
+.st-key-btn_close_voice_tray > button:hover {
+  background: #E2E8F0 !important;
+  color: #0F172A !important;
+}
+
+/* Send Button: Modern Circular Banking Blue */
+.st-key-copilot_send_button > button {
+  background: #2563EB !important;
+  border: none !important;
+  color: #FFFFFF !important;
+  width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  font-size: 1rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.3) !important;
+  transition: all 0.15s ease !important;
+}
+
+.st-key-copilot_send_button > button:hover {
+  background: #1D4ED8 !important;
+  transform: scale(1.05);
+}
+
+/* Attachments Preview Area directly above composer pill */
+.composer-attachments-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+  padding: 0.4rem 0.6rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.composer-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: #0F172A;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-chip-thumb {
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #E2E8F0;
+  flex-shrink: 0;
+}
+
+.composer-attachment-chip .chip-tag {
+  background: #EFF6FF;
+  color: #2563EB;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.4px;
+}
+
+.composer-attachment-chip .chip-size {
+  color: #64748B;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.popover-action-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.35rem;
+}
+
+/* User Attached Badge Inside Messages */
+.user-attached-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-left: 3px solid #2563EB;
+  border-radius: 8px;
+  padding: 0.35rem 0.65rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
+  color: #0F172A;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.user-attached-badge small {
+  color: #64748B;
+  font-weight: 600;
+}
+
+/* Popover menus */
+div[data-testid="stPopoverBody"] {
+  border-radius: 14px !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.15), 0 4px 6px -2px rgba(15, 23, 42, 0.05) !important;
+  background: #FFFFFF !important;
+  padding: 0.85rem !important;
+  z-index: 999999 !important;
+  max-width: 380px !important;
+}
+
+div[data-testid="stPopoverBody"] .stButton > button {
+  border-radius: 8px !important;
+}
+
+/* ChatGPT Welcome Screen */
+.chatgpt-welcome-container {
+  text-align: center;
+  padding: 1.5rem 1rem 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.chatgpt-welcome-avatar {
+  font-size: 2rem;
+  margin-bottom: 0.35rem;
+  line-height: 1;
+}
+
+.chatgpt-welcome-title {
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
+  color: #111827 !important;
+  letter-spacing: -0.3px !important;
+  margin: 0 0 0.35rem 0 !important;
+  line-height: 1.25 !important;
+}
+
+.chatgpt-welcome-subtitle {
+  font-size: 0.82rem !important;
+  color: #64748B !important;
+  line-height: 1.4 !important;
+  max-width: 360px !important;
+  margin: 0 auto 0.85rem auto !important;
+}
+
+/* 2x2 Suggested Prompt Cards */
+[class*="st-key-copilot-dock-prompt-"] button,
+[class*="st-key-copilot-wide-prompt-"] button {
+  background: #FFFFFF !important;
+  border: 1px solid #E5E7EB !important;
+  border-radius: 12px !important;
+  color: #1F2937 !important;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+  padding: 0.5rem 0.65rem !important;
+  text-align: left !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+  transition: all 0.15s ease !important;
+  min-height: 2.3rem !important;
+  margin-bottom: 0.4rem !important;
+}
+
+[class*="st-key-copilot-dock-prompt-"] button:hover,
+[class*="st-key-copilot-wide-prompt-"] button:hover {
+  background: #F8FAFC !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.04) !important;
+}
+

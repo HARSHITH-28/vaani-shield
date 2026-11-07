@@ -64,7 +64,9 @@ def get_category_breakdown(customer_id):
         {
             "category": row["category"],
             "total_amount": round(row["total_amount"], 2),
-            "transaction_count": row["transaction_count"]
+            "total_spent": round(row["total_amount"], 2),
+            "amount": round(row["total_amount"], 2),
+            "transaction_count": row["transaction_count"],
         }
         for row in rows
     ]
@@ -133,15 +135,56 @@ def get_monthly_spending(customer_id, year, month):
     }
 
 
-def find_large_transactions(customer_id, threshold=10000):
+def get_monthly_transaction_summary(customer_id, year, month):
+    """Return scoped monthly credit/debit totals and record counts.
+
+    Only successful credits/debits contribute to money totals. Counts include
+    all matching records and separately report successful/non-successful rows.
+    """
+    if not 2000 <= int(year) <= 2100 or not 1 <= int(month) <= 12:
+        raise ValueError("A valid calendar month is required.")
+
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT
+                COUNT(*) AS transaction_count,
+                SUM(CASE WHEN UPPER(t.status) = 'SUCCESS' THEN 1 ELSE 0 END) AS successful_count,
+                SUM(CASE WHEN UPPER(t.status) <> 'SUCCESS' THEN 1 ELSE 0 END) AS non_successful_count,
+                SUM(CASE WHEN UPPER(t.status) = 'SUCCESS' AND UPPER(t.transaction_type) = 'CREDIT' THEN t.amount ELSE 0 END) AS successful_credits,
+                SUM(CASE WHEN UPPER(t.status) = 'SUCCESS' AND UPPER(t.transaction_type) = 'DEBIT' THEN t.amount ELSE 0 END) AS successful_debits
+            FROM transactions t
+            JOIN accounts a ON a.account_id = t.account_id
+            WHERE a.customer_id = ?
+              AND strftime('%Y', t.transaction_date) = ?
+              AND strftime('%m', t.transaction_date) = ?
+        """, (customer_id, str(int(year)), f"{int(month):02d}")).fetchone()
+    finally:
+        conn.close()
+
+    return {
+        "year": int(year),
+        "month": int(month),
+        "scope": "calendar_month",
+        "transaction_count": int(row["transaction_count"] or 0),
+        "successful_count": int(row["successful_count"] or 0),
+        "non_successful_count": int(row["non_successful_count"] or 0),
+        "successful_credits": round(float(row["successful_credits"] or 0), 2),
+        "successful_debits": round(float(row["successful_debits"] or 0), 2),
+    }
+
+
+def find_large_transactions(customer_id, threshold=10000, limit=None):
     """Find successful transactions above a specified amount."""
 
     if threshold < 0:
         raise ValueError("Threshold cannot be negative.")
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100):
+        raise ValueError("Limit must be between 1 and 100.")
 
     conn = get_connection()
 
-    rows = conn.execute("""
+    query = """
         SELECT
             t.transaction_id,
             t.amount,
@@ -157,10 +200,15 @@ def find_large_transactions(customer_id, threshold=10000):
         WHERE a.customer_id = ?
         AND t.status = 'SUCCESS'
         AND t.transaction_type = 'DEBIT'
-AND t.amount >= ?
+AND t.amount > ?
 
-        ORDER BY t.amount DESC
-    """, (customer_id, threshold)).fetchall()
+        ORDER BY t.amount DESC, t.transaction_date DESC, t.transaction_id DESC
+    """
+    params = [customer_id, threshold]
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    rows = conn.execute(query, params).fetchall()
 
     conn.close()
 

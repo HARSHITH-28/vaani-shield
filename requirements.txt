@@ -6,3 +6,8 @@ python-dotenv
 websockets
 soundfile
 numpy
+pandas
+plotly
+python-multipart
+google-genai<3
+groq
