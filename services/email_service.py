@@ -227,6 +227,60 @@ def _build_email_plaintext(customer_name: str, otp_code: str, expires_in_minutes
     )
 
 
+def _connect_smtp_server(
+    host: str,
+    port: int,
+    use_ssl: bool,
+    use_tls: bool,
+    ssl_context: ssl.SSLContext,
+    timeout: int = 15,
+) -> smtplib.SMTP:
+    """Connect to SMTP server with automatic IPv4 resolution to prevent [Errno 99] in Linux cloud containers."""
+    target_ip = None
+    try:
+        addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        if addr_info:
+            target_ip = addr_info[0][4][0]
+    except Exception:
+        target_ip = None
+
+    last_err = None
+    candidates = [target_ip, host] if target_ip else [host]
+
+    if port == 465 or use_ssl:
+        server = smtplib.SMTP_SSL(timeout=timeout, context=ssl_context)
+        connected = False
+        for target in candidates:
+            try:
+                server.connect(target, port)
+                connected = True
+                break
+            except OSError as exc:
+                last_err = exc
+                continue
+        if not connected:
+            raise last_err or smtplib.SMTPConnectError(500, f"Failed to connect to {host}:{port}")
+        server._host = host
+        return server
+    else:
+        server = smtplib.SMTP(timeout=timeout)
+        connected = False
+        for target in candidates:
+            try:
+                server.connect(target, port)
+                connected = True
+                break
+            except OSError as exc:
+                last_err = exc
+                continue
+        if not connected:
+            raise last_err or smtplib.SMTPConnectError(500, f"Failed to connect to {host}:{port}")
+        server._host = host
+        if use_tls:
+            server.starttls(context=ssl_context)
+        return server
+
+
 def send_verification_email(
     email: str,
     customer_name: str = "",
@@ -271,20 +325,23 @@ def send_verification_email(
         conn.close()
 
     # Read SMTP Configuration
+    smtp_user = os.getenv("SMTP_USERNAME", os.getenv("SMTP_USER", "")).strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", os.getenv("SMTP_PASS", "")).strip()
     smtp_host = os.getenv("SMTP_HOST", os.getenv("SMTP_SERVER", "")).strip()
     smtp_port_raw = os.getenv("SMTP_PORT", "587").strip()
     smtp_port = int(smtp_port_raw) if smtp_port_raw.isdigit() else 587
-    smtp_user = os.getenv("SMTP_USERNAME", os.getenv("SMTP_USER", "")).strip()
-    smtp_password = os.getenv("SMTP_PASSWORD", os.getenv("SMTP_PASS", "")).strip()
-    if "gmail" in smtp_host.lower():
-        smtp_password = smtp_password.replace(" ", "")
     smtp_from = os.getenv("SMTP_FROM_EMAIL", os.getenv("SMTP_SENDER", "")).strip()
     smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in ("true", "1", "yes")
     smtp_use_ssl = os.getenv("SMTP_USE_SSL", "false").strip().lower() in ("true", "1", "yes")
 
-    # Fall back to localhost if host is entirely missing
-    if not smtp_host:
-        smtp_host = "localhost"
+    # If host is missing or localhost, default to Gmail SMTP if user is Gmail
+    if not smtp_host or smtp_host.lower() in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        if "gmail" in smtp_user.lower() or not smtp_host:
+            smtp_host = "smtp.gmail.com"
+            smtp_port = 587
+
+    if "gmail" in smtp_host.lower():
+        smtp_password = smtp_password.replace(" ", "")
 
     is_local_host = smtp_host.lower() in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
 
@@ -324,18 +381,10 @@ def send_verification_email(
     ssl_context = ssl.create_default_context()
 
     try:
-        if smtp_port == 465 or smtp_use_ssl:
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, context=ssl_context, timeout=12) as server:
-                if smtp_user and smtp_password:
-                    server.login(smtp_user, smtp_password)
-                server.send_message(msg)
-        else:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as server:
-                if smtp_use_tls:
-                    server.starttls(context=ssl_context)
-                if smtp_user and smtp_password:
-                    server.login(smtp_user, smtp_password)
-                server.send_message(msg)
+        with _connect_smtp_server(smtp_host, smtp_port, smtp_use_ssl, smtp_use_tls, ssl_context, timeout=15) as server:
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            server.send_message(msg)
 
         logger.info("Verification email sent via SMTP to %s", clean_email)
         return {
@@ -353,10 +402,10 @@ def send_verification_email(
                 "Generate one at: https://myaccount.google.com/apppasswords"
             ) from exc
         raise RuntimeError(f"SMTP authentication failed on {smtp_host}: {str(exc)}") from exc
-    except (smtplib.SMTPConnectError, socket.timeout, TimeoutError, ConnectionRefusedError, socket.gaierror) as exc:
+    except (smtplib.SMTPConnectError, socket.timeout, TimeoutError, ConnectionRefusedError, socket.gaierror, OSError) as exc:
         logger.error("SMTP connection failure to %s:%s: %s", smtp_host, smtp_port, exc)
         raise RuntimeError(
-            f"Unable to connect to SMTP server '{smtp_host}:{smtp_port}'. Please check your network connection and server settings."
+            f"Unable to connect to SMTP server '{smtp_host}:{smtp_port}' ({str(exc)}). Please check your network connection and server settings."
         ) from exc
     except smtplib.SMTPRecipientsRefused as exc:
         logger.error("SMTP recipient refused: %s: %s", clean_email, exc)

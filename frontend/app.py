@@ -24,6 +24,11 @@ try:
     for secret_k, secret_v in st.secrets.items():
         if isinstance(secret_v, str) and secret_k not in os.environ:
             os.environ[secret_k] = secret_v
+    # Default SMTP parameters for Gmail if user provided credentials
+    if "SMTP_HOST" not in os.environ:
+        os.environ["SMTP_HOST"] = "smtp.gmail.com"
+        os.environ["SMTP_PORT"] = "587"
+        os.environ["SMTP_USE_TLS"] = "true"
 except Exception:
     pass
 
