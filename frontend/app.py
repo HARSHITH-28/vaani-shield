@@ -1,12 +1,75 @@
 
 import html
+import os
+import sys
 import textwrap
 from contextlib import nullcontext
 from pathlib import Path
 
+# 1. Ensure project root is in sys.path for Streamlit Cloud and container deployments
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# 2. Load local .env if present
+from dotenv import load_dotenv
+load_dotenv(REPO_ROOT / ".env", override=False)
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+
+# 3. Synchronize Streamlit Cloud secrets into os.environ for backend and database services
+try:
+    for secret_k, secret_v in st.secrets.items():
+        if isinstance(secret_v, str) and secret_k not in os.environ:
+            os.environ[secret_k] = secret_v
+except Exception:
+    pass
+
+# 4. Auto-launch background FastAPI daemon if not already listening
+def _ensure_backend_alive():
+    import socket
+    import threading
+    import time
+    from urllib.parse import urlparse
+
+    api_base = os.getenv("VAANISHIELD_API_BASE", "http://127.0.0.1:8000")
+    if "127.0.0.1" not in api_base and "localhost" not in api_base:
+        return
+
+    port = 8000
+    try:
+        parsed = urlparse(api_base)
+        if parsed.port:
+            port = parsed.port
+    except Exception:
+        pass
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.4)
+        is_open = sock.connect_ex(("127.0.0.1", port)) == 0
+        sock.close()
+        if is_open:
+            return
+    except Exception:
+        pass
+
+    try:
+        import uvicorn
+        from backend.main import app as fastapi_app
+
+        def _run_server():
+            uvicorn.run(fastapi_app, host="127.0.0.1", port=port, log_level="warning")
+
+        thread = threading.Thread(target=_run_server, daemon=True)
+        thread.start()
+        time.sleep(1.2)
+    except Exception:
+        pass
+
+_ensure_backend_alive()
 
 from frontend.api_client import APIError
 from frontend.components.fintech_ui import (
