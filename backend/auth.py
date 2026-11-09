@@ -505,6 +505,29 @@ def register_verify_otp(
     # Verify the OTP
     is_valid, message = verify_email_otp(clean_email, payload.otp_code)
     if not is_valid:
+        # Check if customer was already registered in this verification flow (e.g. form double-click)
+        conn_check = get_connection()
+        try:
+            existing_registered = conn_check.execute(
+                "SELECT customer_id, customer_key, name FROM customers WHERE LOWER(email) = LOWER(?)",
+                (clean_email,),
+            ).fetchone()
+            if existing_registered:
+                cust = dict(existing_registered)
+                customer_key = cust["customer_key"]
+                issued_at = int(time.time())
+                expires_at = issued_at + SESSION_TTL_SECONDS
+                token = _encode_session_token(customer_key, issued_at, expires_at)
+                _set_session_cookie(response, token)
+                return DemoSessionResponse(
+                    customer_key=customer_key,
+                    display_name=cust["name"],
+                    expires_at=datetime.fromtimestamp(expires_at, timezone.utc),
+                    auth_mode="REGISTERED",
+                )
+        finally:
+            conn_check.close()
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=message,
@@ -514,13 +537,22 @@ def register_verify_otp(
     try:
         # Check email uniqueness inside transaction
         existing = conn.execute(
-            "SELECT customer_id FROM customers WHERE LOWER(email) = LOWER(?)",
+            "SELECT customer_id, customer_key, name FROM customers WHERE LOWER(email) = LOWER(?)",
             (clean_email,),
         ).fetchone()
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="An account with this email address is already registered.",
+            # Idempotent retry: customer was already created in this verification flow
+            cust = dict(existing)
+            customer_key = cust["customer_key"]
+            issued_at = int(time.time())
+            expires_at = issued_at + SESSION_TTL_SECONDS
+            token = _encode_session_token(customer_key, issued_at, expires_at)
+            _set_session_cookie(response, token)
+            return DemoSessionResponse(
+                customer_key=customer_key,
+                display_name=cust["name"],
+                expires_at=datetime.fromtimestamp(expires_at, timezone.utc),
+                auth_mode="REGISTERED",
             )
 
         customer_key = f"user-{uuid4().hex[:10]}"
