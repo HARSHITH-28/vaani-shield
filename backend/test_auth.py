@@ -57,6 +57,10 @@ class DemoAuthenticationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.supabase_patch = patch.object(
+            database, "is_supabase_configured", return_value=False
+        )
+        cls.supabase_patch.start()
         cls.database_patch = patch.object(
             database, "DB_PATH", Path(cls.temp_dir.name) / "auth-tests.sqlite3"
         )
@@ -80,6 +84,7 @@ class DemoAuthenticationTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.database_patch.stop()
+        cls.supabase_patch.stop()
         cls.temp_dir.cleanup()
 
     def setUp(self):

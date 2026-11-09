@@ -466,13 +466,22 @@ if not st.session_state.authenticated:
                         placeholder="••••••",
                         key="reg_otp_input_field",
                     )
-                    v_col1, v_col2 = st.columns([1.5, 1.0])
+                    v_col1, v_col2, v_col3 = st.columns([1.5, 1.0, 1.0])
                     with v_col1:
                         verify_submitted = st.form_submit_button("Verify & Activate Account 🚀", type="primary", use_container_width=True)
                     with v_col2:
-                        resend_clicked = st.form_submit_button("← Change Details", type="secondary", use_container_width=True)
+                        resend_code_clicked = st.form_submit_button("🔄 Resend Code", type="secondary", use_container_width=True)
+                    with v_col3:
+                        change_details_clicked = st.form_submit_button("← Edit Info", type="secondary", use_container_width=True)
 
-                if resend_clicked:
+                if resend_code_clicked:
+                    try:
+                        resp = api.register_send_otp(draft)
+                        st.success(resp.get("message", "A new verification code has been dispatched to your email!"))
+                    except APIError as exc:
+                        st.error(f"Failed to resend code: {exc.message}")
+
+                if change_details_clicked:
                     st.session_state["reg_stage"] = "input"
                     st.rerun()
 
