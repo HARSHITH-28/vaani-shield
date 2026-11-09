@@ -487,12 +487,10 @@ def _handle_file_upload(st, api, state, uploaded_file, is_image: bool = False):
 
 def render(st, api, state, *, compact=False):
     customer = state.get("customer") or {}
-    if compact:
-        st.caption("Speak or type in Kannada, English, Hindi, or a code-mixed conversation.")
-    else:
+    if not compact:
         st.markdown("<div class='section-eyebrow'>VAANISHIELD · VOICE BANKING ASSISTANT</div>", unsafe_allow_html=True)
         st.title("How can I help you today?")
-        st.caption("Speak or type in Kannada, English, Hindi, or a code-mixed conversation.")
+        st.caption("Intelligent Multilingual Voice Banking & Financial Assistant")
         left, right = st.columns([3, 1])
         with left:
             if customer.get("display_name"):
@@ -603,10 +601,11 @@ def render(st, api, state, *, compact=False):
             with col1:
                 from frontend.session_state import on_assistant_response_mode_change
                 mode_label = st.selectbox(
-                    "Response format", ["Speech", "Text", "Speech + Text"],
+                    "Response Mode", ["Speech", "Text", "Speech + Text"],
                     index={"speech": 0, "text": 1, "speech_and_text": 2}.get(state["response_mode"], 1),
                     key="assistant_response_mode",
                     on_change=on_assistant_response_mode_change,
+                    label_visibility="visible",
                 )
                 state["response_mode"] = {
                     "Text": "text", "Speech": "speech", "Speech + Text": "speech_and_text",

@@ -2,7 +2,15 @@
 
 from datetime import datetime, timezone
 import streamlit as st
-from streamlit.errors import StreamlitWidgetAlreadyInstantiatedError
+
+try:
+    from streamlit.errors import StreamlitWidgetAlreadyInstantiatedError
+except ImportError:
+    try:
+        from streamlit.error_util import StreamlitWidgetAlreadyInstantiatedError
+    except ImportError:
+        class StreamlitWidgetAlreadyInstantiatedError(Exception):
+            pass
 
 from frontend.api_client import VaaniShieldAPI
 

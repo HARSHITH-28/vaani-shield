@@ -11,3 +11,4 @@ plotly
 python-multipart
 google-genai<3
 groq
+psycopg2-binary

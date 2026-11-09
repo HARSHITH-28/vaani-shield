@@ -74,12 +74,12 @@ def render_floating_assistant(st, api, state, *, in_dock: bool = False):
                         unsafe_allow_html=True,
                     )
                 with action:
-                    if st.button("✕", key="floating-assistant-close", help="Close assistant"):
+                    if st.button("✕", key="floating-assistant-close"):
                         state["assistant_open"] = False
                         state["assistant_dock_closed"] = True
                         st.rerun()
 
-            language_col, mode_col = st.columns([1, 1.3], gap="small", vertical_alignment="center")
+            language_col, mode_col = st.columns(2, gap="medium")
             with language_col:
                 from frontend.session_state import (
                     RESPONSE_LANGUAGE_OPTIONS_SHORT,
@@ -90,19 +90,16 @@ def render_floating_assistant(st, api, state, *, in_dock: bool = False):
                     RESPONSE_LANGUAGE_OPTIONS_SHORT,
                     key="dock_copilot_language_selector",
                     on_change=on_dock_language_change,
-                    help="Response language",
+                    label_visibility="visible",
                 )
             with mode_col:
                 from frontend.session_state import on_dock_response_mode_change
                 st.selectbox(
-                    "Response mode",
+                    "Response Mode",
                     ["Speech", "Text", "Speech + Text"],
                     key="dock_response_mode_selector",
                     on_change=on_dock_response_mode_change,
-                    help=(
-                        "Speech: respond using audio. Text: respond using text only. "
-                        "Speech + Text: provide both written and spoken responses."
-                    ),
+                    label_visibility="visible",
                 )
 
             st.markdown(

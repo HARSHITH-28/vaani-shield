@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import time
 from datetime import datetime, timezone, timedelta
 from uuid import UUID, uuid4
@@ -17,10 +18,14 @@ from backend.api_models import (
     DemoLogoutResponse,
     DemoSessionRequest,
     DemoSessionResponse,
+    RegisterSendOtpRequest,
+    RegisterSendOtpResponse,
+    RegisterVerifyOtpRequest,
     SigninAuditLogEntry,
 )
 from services.banking_service import get_customer_profile_by_key
 from services.database import DEMO_CUSTOMER_KEYS, get_connection
+from services.email_service import send_verification_email, verify_email_otp
 from services.principal import CustomerPrincipal
 
 
@@ -68,8 +73,8 @@ def _encode_session_token(
     session_id: UUID | None = None,
 ) -> str:
     """Create a signed token. Kept small and local; no JWT dependency needed."""
-    if customer_key not in DEMO_CUSTOMER_KEY_ALLOWLIST:
-        raise ValueError("Customer is not available in demo authentication.")
+    if customer_key not in DEMO_CUSTOMER_KEY_ALLOWLIST and get_customer_profile_by_key(customer_key) is None:
+        raise ValueError("Customer is not available in authentication.")
 
     header = {"alg": "HS256", "typ": "JWT"}
     payload = {
@@ -118,11 +123,15 @@ def _decode_session_token(token: str) -> CustomerPrincipal:
     customer_key = payload.get("sub")
     issued_at = payload.get("iat")
     expires_at = payload.get("exp")
+    customer_valid = (
+        customer_key in DEMO_CUSTOMER_KEY_ALLOWLIST
+        or (isinstance(customer_key, str) and get_customer_profile_by_key(customer_key) is not None)
+    )
     if (
         payload.get("iss") != SESSION_ISSUER
         or payload.get("aud") != SESSION_AUDIENCE
         or not isinstance(customer_key, str)
-        or customer_key not in DEMO_CUSTOMER_KEY_ALLOWLIST
+        or not customer_valid
         or type(issued_at) is not int
         or type(expires_at) is not int
     ):
@@ -413,9 +422,9 @@ def demo_login(payload: DemoLoginRequest, request: Request, response: Response):
             )
 
         customer_key = customer["customer_key"]
-        if customer_key not in DEMO_CUSTOMER_KEY_ALLOWLIST:
+        if not customer_key:
             record_signin_audit_log(customer["customer_id"], email, "FAILED", client_ip, raw_ua, platform)
-            raise HTTPException(status_code=403, detail="Customer not permitted for demo login.")
+            raise HTTPException(status_code=403, detail="Customer account record is missing public key.")
 
         record_signin_audit_log(customer["customer_id"], email, "SUCCESS", client_ip, raw_ua, platform)
 
@@ -434,6 +443,168 @@ def demo_login(payload: DemoLoginRequest, request: Request, response: Response):
             customer_key=customer_key,
             display_name=customer["name"],
             expires_at=datetime.fromtimestamp(expires_at, timezone.utc),
+            auth_mode="REGISTERED" if customer_key not in DEMO_CUSTOMER_KEY_ALLOWLIST else "DEMO",
+        )
+    finally:
+        conn.close()
+
+
+@router.post("/register/send-otp", response_model=RegisterSendOtpResponse)
+def register_send_otp(payload: RegisterSendOtpRequest):
+    """Validate registration draft and send an email verification OTP via SMTP."""
+    clean_email = payload.email.strip().lower()
+
+    # Check if email is already registered
+    conn = get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT customer_id FROM customers WHERE LOWER(email) = LOWER(?)",
+            (clean_email,),
+        ).fetchone()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An account with this email address already exists. Please sign in instead.",
+            )
+    finally:
+        conn.close()
+
+    try:
+        result = send_verification_email(
+            email=clean_email,
+            customer_name=payload.name.strip(),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+    return RegisterSendOtpResponse(
+        status="otp_sent",
+        email=clean_email,
+        message=result.get("message", "Verification code dispatched."),
+        dev_otp=result.get("dev_otp"),
+    )
+
+
+@router.post("/register/verify-otp", response_model=DemoSessionResponse)
+def register_verify_otp(
+    payload: RegisterVerifyOtpRequest,
+    request: Request,
+    response: Response,
+):
+    """Verify email OTP, create customer, provision initial account, and start authenticated session."""
+    clean_email = payload.email.strip().lower()
+    raw_ua = request.headers.get("user-agent", "Unknown")
+    platform = _parse_device_platform(raw_ua)
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    if client_ip in {"127.0.0.1", "::1", "localhost"}:
+        client_ip = "127.0.0.1 (Local Session)"
+
+    # Verify the OTP
+    is_valid, message = verify_email_otp(clean_email, payload.otp_code)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message,
+        )
+
+    conn = get_connection()
+    try:
+        # Check email uniqueness inside transaction
+        existing = conn.execute(
+            "SELECT customer_id FROM customers WHERE LOWER(email) = LOWER(?)",
+            (clean_email,),
+        ).fetchone()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An account with this email address is already registered.",
+            )
+
+        customer_key = f"user-{uuid4().hex[:10]}"
+        hashed_pwd = hash_password(payload.password)
+        clean_name = payload.name.strip()
+        clean_phone = payload.phone.strip()
+        income = float(payload.monthly_income)
+
+        cursor = conn.execute(
+            """
+            INSERT INTO customers (customer_key, name, email, phone, monthly_income, password_hash)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (customer_key, clean_name, clean_email, clean_phone, income, hashed_pwd),
+        )
+        customer_id = cursor.lastrowid
+
+        # Determine account type and initial balance
+        acct_type = payload.account_type.upper()
+        if acct_type not in {"SAVINGS", "SALARY", "CURRENT"}:
+            acct_type = "SAVINGS"
+
+        initial_balances = {
+            "SAVINGS": 25000.0,
+            "SALARY": 50000.0,
+            "CURRENT": 100000.0,
+        }
+        balance = initial_balances.get(acct_type, 25000.0)
+        account_number = f"VS{secrets.randbelow(90000000) + 10000000}"
+
+        cursor_acct = conn.execute(
+            """
+            INSERT INTO accounts (customer_id, account_number, account_type, balance, status)
+            VALUES (?, ?, ?, ?, 'ACTIVE')
+            """,
+            (customer_id, account_number, acct_type, balance),
+        )
+        account_id = cursor_acct.lastrowid
+
+        # Provision a virtual debit card for the account
+        last_four = f"{secrets.randbelow(9000) + 1000}"
+        conn.execute(
+            """
+            INSERT INTO cards (account_id, card_type, last_four, status, expiry_date)
+            VALUES (?, 'DEBIT', ?, 'ACTIVE', '12/30')
+            """,
+            (account_id, last_four),
+        )
+
+        # Welcome notification
+        now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        notif_id = str(uuid4())
+        event_ref = f"welcome-{customer_key}"
+        welcome_title = f"Welcome to VaaniShield, {clean_name}!"
+        welcome_msg = (
+            f"Your new {acct_type.title()} Account ({account_number}) is active with an opening "
+            f"balance of ₹{balance:,.2f}. Email verification was completed successfully."
+        )
+        try:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO notifications (
+                    notification_id, customer_key, category, title, message, event_ref, is_read, created_at
+                )
+                VALUES (?, ?, 'banking_alert', ?, ?, ?, 0, ?)
+                """,
+                (notif_id, customer_key, welcome_title, welcome_msg, event_ref, now_iso),
+            )
+        except Exception:
+            pass
+
+        conn.commit()
+        record_signin_audit_log(customer_id, clean_email, "SUCCESS (NEW REGISTRATION)", client_ip, raw_ua, platform)
+
+        issued_at = int(time.time())
+        expires_at = issued_at + SESSION_TTL_SECONDS
+        token = _encode_session_token(customer_key, issued_at, expires_at)
+        _set_session_cookie(response, token)
+
+        return DemoSessionResponse(
+            customer_key=customer_key,
+            display_name=clean_name,
+            expires_at=datetime.fromtimestamp(expires_at, timezone.utc),
+            auth_mode="REGISTERED",
         )
     finally:
         conn.close()

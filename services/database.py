@@ -4,6 +4,13 @@ import secrets
 import uuid
 from pathlib import Path
 
+from services.supabase_database import (
+    get_supabase_connection,
+    initialize_supabase_database,
+    is_supabase_configured,
+    seed_supabase_demo_data,
+)
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
@@ -19,6 +26,8 @@ DEMO_CUSTOMER_KEYS = {
 
 
 def get_connection():
+    if is_supabase_configured():
+        return get_supabase_connection()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -26,6 +35,15 @@ def get_connection():
 
 
 def initialize_database():
+    if is_supabase_configured():
+        conn = get_supabase_connection()
+        try:
+            initialize_supabase_database(conn)
+            seed_supabase_demo_data(conn)
+        finally:
+            conn.close()
+        return
+
     conn = get_connection()
     try:
         conn.executescript("""
@@ -138,6 +156,17 @@ def initialize_database():
         FOREIGN KEY (customer_id)
             REFERENCES customers(customer_id)
     );
+
+        CREATE TABLE IF NOT EXISTS email_verifications (
+            verification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            otp_code TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            is_verified INTEGER DEFAULT 0 CHECK (is_verified IN (0, 1)),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_email_verifications_lookup
+            ON email_verifications(email, expires_at);
 
         CREATE TABLE IF NOT EXISTS conversations (
             conversation_id TEXT PRIMARY KEY,

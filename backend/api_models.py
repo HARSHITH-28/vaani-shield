@@ -54,10 +54,38 @@ class SigninAuditLogEntry(ContractModel):
 
 
 class DemoSessionResponse(ContractModel):
-    customer_key: DemoCustomerKey
+    customer_key: str = Field(min_length=1, max_length=128)
     display_name: str
     expires_at: datetime
-    auth_mode: Literal["DEMO"] = "DEMO"
+    auth_mode: Literal["DEMO", "REGISTERED"] = "DEMO"
+
+
+class RegisterSendOtpRequest(ContractModel):
+    """Payload to request an email verification OTP for opening an account."""
+    name: str = Field(min_length=2, max_length=100)
+    email: str = Field(min_length=5, max_length=255)
+    phone: str = Field(min_length=10, max_length=15)
+    account_type: Literal["SAVINGS", "SALARY", "CURRENT"] = "SAVINGS"
+    monthly_income: float = Field(default=50000.0, ge=0)
+    password: str = Field(min_length=6, max_length=128)
+
+
+class RegisterSendOtpResponse(ContractModel):
+    status: Literal["otp_sent"] = "otp_sent"
+    email: str
+    message: str
+    dev_otp: str | None = None
+
+
+class RegisterVerifyOtpRequest(ContractModel):
+    """Payload to verify email OTP and finalize account registration."""
+    email: str = Field(min_length=5, max_length=255)
+    otp_code: str = Field(min_length=6, max_length=6)
+    name: str = Field(min_length=2, max_length=100)
+    phone: str = Field(min_length=10, max_length=15)
+    account_type: Literal["SAVINGS", "SALARY", "CURRENT"] = "SAVINGS"
+    monthly_income: float = Field(default=50000.0, ge=0)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class DemoLogoutResponse(ContractModel):

@@ -146,77 +146,306 @@ if st.query_params.get("demo_messages") == "long":
         ]
 
 if not st.session_state.authenticated:
+    # Morphed animated ambient gradient orbs in background
     st.markdown(
         textwrap.dedent("""
-        <div class="auth-container">
-          <div class="auth-brand-logo">🛡️</div>
-          <div class="auth-brand-title">VaaniShield Digital Banking</div>
-          <div class="auth-brand-subtitle">Secure AI-Powered Customer Portal · Demonstration Login</div>
+        <div class="morphic-orb morphic-orb-1"></div>
+        <div class="morphic-orb morphic-orb-2"></div>
+        <div class="morphic-orb morphic-orb-3"></div>
+
+        <div class="landing-top-bar">
+          <div class="landing-brand-wrap">
+            <div class="landing-brand-badge">&#128737;&#65039;</div>
+            <div>
+              <div class="landing-brand-title">Vaani<span>Shield</span></div>
+              <div class="landing-brand-desc">Next-Gen Intelligent Banking &amp; Financial Security Platform</div>
+            </div>
+          </div>
+          <div class="landing-trust-pills">
+            <span class="landing-trust-pill">&#128274; 256-Bit SSL/TLS</span>
+            <span class="landing-trust-pill">&#9889; Salted PBKDF2</span>
+            <span class="landing-status-pill">&#9679; AI Shield Active</span>
+          </div>
         </div>
         """).strip(),
         unsafe_allow_html=True,
     )
 
-    auth_col1, auth_col2, auth_col3 = st.columns([1, 2.2, 1])
-    with auth_col2:
-        st.markdown("##### ⚡ Quick Select Demo Customer")
-        qc1, qc2, qc3 = st.columns(3)
-        if qc1.button("Arjun Sharma\n(Primary Demo)", use_container_width=True):
-            st.session_state["login_email"] = "arjun@example.com"
-            st.session_state["login_password"] = "Arjun@Demo2026"
-        if qc2.button("Priya Patel\n(Business Acct)", use_container_width=True):
-            st.session_state["login_email"] = "priya@example.com"
-            st.session_state["login_password"] = "Priya@Demo2026"
-        if qc3.button("Rahul Verma\n(Savings Acct)", use_container_width=True):
-            st.session_state["login_email"] = "rahul@example.com"
-            st.session_state["login_password"] = "Rahul@Demo2026"
+    # Initialize tab choice
+    if "auth_mode_tab" not in st.session_state:
+        st.session_state["auth_mode_tab"] = "signin"
 
-        default_email = st.session_state.get("login_email", "arjun@example.com")
-        default_pwd = st.session_state.get("login_password", "Arjun@Demo2026")
+    # Centered Minimalist Layout
+    _, center_col, _ = st.columns([1, 2.3, 1])
 
-        with st.form("demo_sign_in"):
-            st.markdown("##### Sign in to your account")
-            email_val = st.text_input("Registered Email Address", value=default_email, key="signin_email_field")
-            pwd_val = st.text_input("Password", value=default_pwd, type="password", key="signin_password_field")
-            submitted = st.form_submit_button("Sign In Securely", type="primary", use_container_width=True)
-
-        if submitted:
-            clean_email = email_val.strip()
-            clean_pwd = pwd_val.strip()
-            try:
-                profile = api.demo_login(clean_email, clean_pwd)
-                mark_session_valid(st.session_state, profile)
-                reset_conversation_state(st.session_state)
-                st.rerun()
-            except APIError as error:
-                # Fallback to key-based demo session if demo_login fails on unhashed setups
-                key_map = {
-                    "arjun@example.com": "demo-arjun",
-                    "priya@example.com": "demo-priya",
-                    "rahul@example.com": "demo-rahul",
-                }
-                if clean_email in key_map and "Arjun@" in clean_pwd or "Priya@" in clean_pwd or "Rahul@" in clean_pwd:
-                    try:
-                        profile = api.create_demo_session(key_map[clean_email])
-                        mark_session_valid(st.session_state, profile)
-                        reset_conversation_state(st.session_state)
-                        st.rerun()
-                    except Exception:
-                        pass
-                st.error(
-                    f"Authentication failed: {error.message if hasattr(error, 'message') else 'Invalid email or password'}. "
-                    "Ensure you use valid credentials (e.g. arjun@example.com / Arjun@Demo2026)."
-                )
-
+    with center_col:
         st.markdown(
             textwrap.dedent("""
-            <div class="auth-credential-pill">
-              <b>🔒 Bank-Grade Authentication Security</b><br>
-              Passwords verified via salted 100,000-iteration PBKDF2-SHA256 cryptography. Every login event is recorded with device, IP, and UTC/IST timestamp in the audit log.
+            <div class="auth-header-lockup">
+              <div class="auth-header-icon">&#128273;</div>
+              <div class="auth-header-title">VaaniShield Portal</div>
+              <div class="auth-header-sub">Enter your credentials or register a verified account below.</div>
             </div>
             """).strip(),
             unsafe_allow_html=True,
         )
+
+        # Two-option segmented switcher
+        tab_btn1, tab_btn2 = st.columns(2)
+        if tab_btn1.button(
+            "🔐 Sign In to Account",
+            key="tab_signin_btn",
+            type="primary" if st.session_state["auth_mode_tab"] == "signin" else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["auth_mode_tab"] = "signin"
+            st.rerun()
+
+        if tab_btn2.button(
+            "✨ Open New Account",
+            key="tab_register_btn",
+            type="primary" if st.session_state["auth_mode_tab"] == "register" else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["auth_mode_tab"] = "register"
+            st.session_state.setdefault("reg_stage", "input")
+            st.rerun()
+
+        # OPTION 1: SIGN IN
+        if st.session_state["auth_mode_tab"] == "signin":
+            # Quick Demo Customer Pre-fill Strip
+            st.markdown(
+                textwrap.dedent("""
+                <div class="demo-quick-title">&#9889; Quick Demo Access</div>
+                """).strip(),
+                unsafe_allow_html=True,
+            )
+            qc1, qc2, qc3 = st.columns(3)
+            if qc1.button("Arjun Sharma\n(Primary Demo)", key="btn_quick_arjun", use_container_width=True):
+                st.session_state["login_email"] = "arjun@example.com"
+                st.session_state["login_password"] = "Arjun@Demo2026"
+            if qc2.button("Priya Patel\n(Business Acct)", key="btn_quick_priya", use_container_width=True):
+                st.session_state["login_email"] = "priya@example.com"
+                st.session_state["login_password"] = "Priya@Demo2026"
+            if qc3.button("Rahul Verma\n(Savings Acct)", key="btn_quick_rahul", use_container_width=True):
+                st.session_state["login_email"] = "rahul@example.com"
+                st.session_state["login_password"] = "Rahul@Demo2026"
+
+            default_email = st.session_state.get("login_email", "arjun@example.com")
+            default_pwd = st.session_state.get("login_password", "Arjun@Demo2026")
+
+            with st.form("demo_sign_in"):
+                st.markdown("##### 🔐 Sign in to your account")
+                email_val = st.text_input("Registered Email Address", value=default_email, key="signin_email_field", placeholder="e.g. arjun@example.com")
+                pwd_val = st.text_input("Password", value=default_pwd, type="password", key="signin_password_field", placeholder="••••••••••••")
+                submitted = st.form_submit_button("Sign In Securely ➔", type="primary", use_container_width=True)
+
+            if submitted:
+                clean_email = email_val.strip()
+                clean_pwd = pwd_val.strip()
+                try:
+                    profile = api.demo_login(clean_email, clean_pwd)
+                    mark_session_valid(st.session_state, profile)
+                    reset_conversation_state(st.session_state)
+                    st.rerun()
+                except APIError as error:
+                    # Fallback to key-based demo session if demo_login fails on legacy unhashed setups
+                    key_map = {
+                        "arjun@example.com": "demo-arjun",
+                        "priya@example.com": "demo-priya",
+                        "rahul@example.com": "demo-rahul",
+                    }
+                    if clean_email in key_map and ("Arjun@" in clean_pwd or "Priya@" in clean_pwd or "Rahul@" in clean_pwd):
+                        try:
+                            profile = api.create_demo_session(key_map[clean_email])
+                            mark_session_valid(st.session_state, profile)
+                            reset_conversation_state(st.session_state)
+                            st.rerun()
+                        except Exception:
+                            pass
+                    st.error(
+                        f"Authentication failed: {error.message if hasattr(error, 'message') else 'Invalid email or password'}. "
+                        "Please verify your credentials or register a new account."
+                    )
+
+            st.markdown(
+                textwrap.dedent("""
+                <div class="auth-security-footer">
+                  <div class="auth-security-footer-icon">&#128274;</div>
+                  <div>
+                    <strong>Bank-Grade Authentication Security</strong><br>
+                    Passwords verified via salted 100,000-iteration PBKDF2-SHA256 cryptography. Every login attempt is audited with client device and IP timestamp.
+                  </div>
+                </div>
+                """).strip(),
+                unsafe_allow_html=True,
+            )
+
+        # OPTION 2: OPEN NEW ACCOUNT (REGISTER)
+        else:
+            reg_stage = st.session_state.get("reg_stage", "input")
+
+            # STAGE 1: Collect Basic Details
+            if reg_stage == "input":
+                with st.form("new_registration_form"):
+                    st.markdown("##### 👤 Open Your VaaniShield Account")
+                    st.caption("Complete registration to activate your account with SMTP email verification.")
+
+                    r_name = st.text_input("Full Name (as per Govt ID)", placeholder="e.g. Aarav Sharma", key="reg_name_input")
+                    r_col1, r_col2 = st.columns(2)
+                    with r_col1:
+                        r_email = st.text_input("Email Address", placeholder="e.g. aarav@example.com", key="reg_email_input")
+                    with r_col2:
+                        r_phone = st.text_input("Mobile Number", placeholder="e.g. 9876543210", key="reg_phone_input")
+
+                    r_acct_type = st.selectbox(
+                        "Preferred Account Facility",
+                        options=[
+                            "SAVINGS - High-Yield Digital Savings (₹25,000 Initial Balance)",
+                            "SALARY - Executive Corporate Salary (₹50,000 Initial Balance)",
+                            "CURRENT - Commercial Business Banking (₹1,00,000 Initial Balance)",
+                        ],
+                        key="reg_acct_type_input",
+                    )
+                    
+                    r_income = st.number_input(
+                        "Estimated Monthly Income / Deposit (₹)",
+                        min_value=10000,
+                        max_value=10000000,
+                        value=75000,
+                        step=5000,
+                        key="reg_income_input",
+                    )
+
+                    p_col1, p_col2 = st.columns(2)
+                    with p_col1:
+                        r_pwd = st.text_input("Create Password", type="password", placeholder="Min 6 characters", key="reg_pwd_input")
+                    with p_col2:
+                        r_pwd_confirm = st.text_input("Confirm Password", type="password", placeholder="Repeat password", key="reg_pwd_confirm_input")
+
+                    reg_submitted = st.form_submit_button("Send Verification Code ✉️", type="primary", use_container_width=True)
+
+                if reg_submitted:
+                    c_name = r_name.strip()
+                    c_email = r_email.strip().lower()
+                    c_phone = r_phone.strip()
+                    c_pwd = r_pwd.strip()
+                    c_pwd2 = r_pwd_confirm.strip()
+
+                    # Validations
+                    if len(c_name) < 2:
+                        st.error("Please enter your full legal name.")
+                    elif not c_email or "@" not in c_email or "." not in c_email:
+                        st.error("Please provide a valid email address.")
+                    elif len(c_phone) < 10:
+                        st.error("Please enter a valid 10-digit mobile number.")
+                    elif len(c_pwd) < 6:
+                        st.error("Password must be at least 6 characters in length.")
+                    elif c_pwd != c_pwd2:
+                        st.error("Passwords do not match. Please re-enter your password.")
+                    else:
+                        acct_code = "SAVINGS"
+                        if "SALARY" in r_acct_type:
+                            acct_code = "SALARY"
+                        elif "CURRENT" in r_acct_type:
+                            acct_code = "CURRENT"
+
+                        payload = {
+                            "name": c_name,
+                            "email": c_email,
+                            "phone": c_phone,
+                            "account_type": acct_code,
+                            "monthly_income": float(r_income),
+                            "password": c_pwd,
+                        }
+
+                        try:
+                            resp = api.register_send_otp(payload)
+                            st.session_state["reg_draft"] = payload
+                            st.session_state["reg_stage"] = "verify"
+                            st.success(resp.get("message", "Verification code sent to your email!"))
+                            st.rerun()
+                        except APIError as exc:
+                            err_msg = getattr(exc, "message", None) or str(exc)
+                            st.error(f"Registration failed: {err_msg}")
+
+            # STAGE 2: Email OTP Verification (Normal SMTP Mode)
+            elif reg_stage == "verify":
+                draft = st.session_state.get("reg_draft", {})
+                target_email = draft.get("email", "your email")
+
+                st.markdown(
+                    textwrap.dedent(f"""
+                    <div class="otp-stage-card">
+                      <div class="otp-stage-icon">&#128233;</div>
+                      <div class="otp-stage-title">Verify Your Email Address</div>
+                      <div style="font-size: 0.85rem; color: #4A4658;">
+                        A 6-digit verification code has been dispatched via SMTP to:
+                      </div>
+                      <div class="otp-target-email">{html.escape(target_email)}</div>
+                      <div style="font-size: 0.78rem; color: #6B667A;">
+                        Valid for 10 minutes &bull; Please check your inbox or spam folder.
+                      </div>
+                    </div>
+                    """).strip(),
+                    unsafe_allow_html=True,
+                )
+
+                with st.form("verify_otp_form"):
+                    otp_entered = st.text_input(
+                        "Enter 6-Digit OTP Code",
+                        max_chars=6,
+                        placeholder="••••••",
+                        key="reg_otp_input_field",
+                    )
+                    v_col1, v_col2 = st.columns([1.5, 1.0])
+                    with v_col1:
+                        verify_submitted = st.form_submit_button("Verify & Activate Account 🚀", type="primary", use_container_width=True)
+                    with v_col2:
+                        resend_clicked = st.form_submit_button("← Change Details", type="secondary", use_container_width=True)
+
+                if resend_clicked:
+                    st.session_state["reg_stage"] = "input"
+                    st.rerun()
+
+                if verify_submitted:
+                    clean_otp = otp_entered.strip()
+                    if len(clean_otp) != 6:
+                        st.error("Please enter the complete 6-digit verification code.")
+                    else:
+                        verify_payload = {
+                            "email": target_email,
+                            "otp_code": clean_otp,
+                            "name": draft.get("name", "New Customer"),
+                            "phone": draft.get("phone", "9876543210"),
+                            "account_type": draft.get("account_type", "SAVINGS"),
+                            "monthly_income": float(draft.get("monthly_income", 50000.0)),
+                            "password": draft.get("password", ""),
+                        }
+                        try:
+                            profile = api.register_verify_otp(verify_payload)
+                            mark_session_valid(st.session_state, profile)
+                            reset_conversation_state(st.session_state)
+                            st.session_state["reg_stage"] = "input"
+                            st.session_state.pop("reg_draft", None)
+                            st.toast("🎉 Account opened and verified successfully! Welcome to VaaniShield.", icon="🛡️")
+                            st.rerun()
+                        except APIError as exc:
+                            st.error(f"Verification failed: {exc.message}")
+
+            st.markdown(
+                textwrap.dedent("""
+                <div class="auth-security-footer">
+                  <div class="auth-security-footer-icon">&#128737;&#65039;</div>
+                  <div>
+                    <strong>Secure Customer Onboarding</strong><br>
+                    New accounts are created with verified email credentials, automated debit card provisioning, and cryptographic session protection.
+                  </div>
+                </div>
+                """).strip(),
+                unsafe_allow_html=True,
+            )
+
     st.stop()
 
 if session_validation_due(st.session_state):

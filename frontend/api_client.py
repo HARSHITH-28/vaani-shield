@@ -17,6 +17,7 @@ class APIError(RuntimeError):
     def __init__(self, status_code: int, message: str, payload=None):
         super().__init__(message)
         self.status_code = status_code
+        self.message = message
         self.payload = payload
 
 
@@ -161,6 +162,22 @@ class VaaniShieldAPI:
         return self._json(
             "POST", "/api/v1/auth/demo/login", expected=(200,),
             json={"email": email, "password": password},
+        )
+
+    def register_send_otp(self, payload: dict):
+        return self._json(
+            "POST",
+            "/api/v1/auth/demo/register/send-otp",
+            expected=(200,),
+            json=payload,
+        )
+
+    def register_verify_otp(self, payload: dict):
+        return self._json(
+            "POST",
+            "/api/v1/auth/demo/register/verify-otp",
+            expected=(200,),
+            json=payload,
         )
 
     def get_security_activity(self):
