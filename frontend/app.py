@@ -12,11 +12,10 @@ from frontend.api_client import APIError
 from frontend.components.fintech_ui import (
     format_inr,
     get_category_icon,
-    render_balance_hero_html,
     render_stepper_html,
     render_transaction_card_html,
 )
-from frontend.components.floating_assistant import render_floating_assistant
+from frontend.components.floating_assistant import assistant_dock_is_visible, render_floating_assistant
 from frontend.navigation import (
     FEATURE_SUBFEATURES,
     apply_pending_navigation,
@@ -237,7 +236,7 @@ profile_name = st.session_state.customer.get("display_name", "Demo customer")
 # ==================================================
 # LEVEL 1 — TOP HEADER (FULL-WIDTH BRAND & IDENTITY)
 # ==================================================
-with st.container(key="profile-header"):
+with st.container(key="profile-header-copilot-open" if assistant_dock_is_visible(st.session_state) else "profile-header"):
     brand, identity, notif_col, demo_badge, copilot_action = st.columns([1.8, 2.6, 0.9, 1.1, 1.2])
     with brand:
         st.markdown(
@@ -336,6 +335,15 @@ with st.container(key="profile-header"):
                                 unsafe_allow_html=True,
                             )
                         with col_action:
+                            sms_report_id = (
+                                scam_detection.sms_report_id_from_notification(notif)
+                                if n_cat == "security_alert" else None
+                            )
+                            if sms_report_id and st.button(
+                                "View Analysis", key=f"btn_notif_view_analysis_{n_id}_{idx}"
+                            ):
+                                if scam_detection.queue_sms_report_navigation(st.session_state, notif):
+                                    st.rerun()
                             if is_unread:
                                 if st.button("✓", key=btn_key, help="Mark as read"):
                                     try:
@@ -347,15 +355,14 @@ with st.container(key="profile-header"):
     with demo_badge:
         st.markdown("<div class='demo-badge'>SYNTHETIC DEMO</div>", unsafe_allow_html=True)
     with copilot_action:
-        is_dock_open = bool(st.session_state.get("assistant_open"))
         if st.button(
-            "✕ Copilot" if is_dock_open else "✨ Copilot",
+            "✨ Vaani AI",
             key="header-copilot-toggle",
-            type="primary" if is_dock_open else "secondary",
+            type="secondary",
             width="stretch",
-            help="Open or close the Vaani AI Banking Copilot side dock",
+            help="Open or close the Vaani AI panel",
         ):
-            st.session_state["assistant_open"] = not is_dock_open
+            st.session_state["assistant_open"] = True
             st.rerun()
 
 # Persistent Browser-Side Wake-Word Listener (Zero Cloud Audio Streaming)
@@ -379,7 +386,7 @@ feature_icons = {
     "Account Opening Assistant": "📝",
 }
 
-is_copilot_open = bool(st.session_state.get("assistant_open"))
+is_copilot_open = assistant_dock_is_visible(st.session_state)
 nav_container_key = "main-nav-container-copilot-open" if is_copilot_open else "main-nav-container"
 
 with st.container(key=nav_container_key):
@@ -409,6 +416,7 @@ with st.sidebar:
     )
 
     st.markdown(
+        f"<div class='sidebar-user-card'><strong>{html.escape(profile_name)}</strong><span>Premium Demo Customer</span></div>"
         f"<div class='sidebar-context-card'>"
         f"<div class='sidebar-context-kicker'>Active Feature</div>"
         f"<div class='sidebar-context-title'>{feature_icons.get(feature, '•')} {feature}</div>"
@@ -581,7 +589,7 @@ if feature in {"Banking Information", "Financial Intelligence"}:
 # Dynamic shared responsive workspace container:
 # Automatically reserves horizontal space on the right when Vaani AI Copilot opens,
 # and restores full-width layout when Copilot closes, across all banking sections.
-is_copilot_open = bool(st.session_state.get("assistant_open"))
+is_copilot_open = assistant_dock_is_visible(st.session_state)
 workspace_key = "banking-workspace-copilot-open" if is_copilot_open else "banking-workspace-copilot-closed"
 with st.container(key=workspace_key):
     # CENTRAL FEATURE WORKSPACE
@@ -609,25 +617,14 @@ with st.container(key=workspace_key):
     elif page == "Overview":
     
         is_visible = bool(st.session_state.setdefault("balance_visible", True))
-        primary_acc = accounts[0] if accounts else {}
-        acc_num = primary_acc.get("account_number", "VS1000001234")
-        acc_type = primary_acc.get("account_type", "SAVINGS")
-        cust_name = customer.get("name") or profile_name
-        monthly_in = float(customer.get("monthly_income") or 85000.0)
-    
-        st.markdown(
-            render_balance_hero_html(
-                balance=balance,
-                account_number=acc_num,
-                account_type=acc_type,
-                customer_name=cust_name,
-                is_visible=is_visible,
-                monthly_inflow=monthly_in,
-            ),
-            unsafe_allow_html=True,
-        )
-    
-        q1, q2, q3, q4 = st.columns(4)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Monthly Inflow", money(customer.get("monthly_income", 0)))
+        col2.metric("Total Spending", money(summary.get("total_spent", 0)))
+        col3.metric("Estimated Savings", money(advisory.get("savings_analysis", {}).get("estimated_savings", 0)))
+        savings_rate = advisory.get("savings_analysis", {}).get("savings_rate", 0)
+        col4.metric("Savings Rate", f"{savings_rate:.1f}%")
+
+        q1, q2, q3 = st.columns(3)
         with q1:
             vis_label = "👁️ Hide Balance" if is_visible else "👁️ Show Balance"
             if st.button(vis_label, key="toggle-balance-vis-btn", width="stretch"):
@@ -641,20 +638,6 @@ with st.container(key=workspace_key):
             if st.button("🔍 Explore Transactions", key="quick-tx-explorer-btn", width="stretch"):
                 request_navigation(st.session_state, "Banking Information", "Transactions")
                 st.rerun()
-        with q4:
-            if st.button("✨ Ask Vaani AI", key="quick-ask-vaani-btn", width="stretch"):
-                st.session_state["assistant_open"] = True
-                st.rerun()
-    
-        st.write("")
-    
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Monthly Inflow", money(customer.get("monthly_income", 0)))
-        col2.metric("Total Spending", money(summary.get("total_spent", 0)))
-        col3.metric("Estimated Savings", money(advisory.get("savings_analysis", {}).get("estimated_savings", 0)))
-        savings_rate = advisory.get("savings_analysis", {}).get("savings_rate", 0)
-        col4.metric("Savings Rate", f"{savings_rate:.1f}%")
-    
         st.write("")
     
         left, right = st.columns([1.6, 1])
@@ -1529,7 +1512,7 @@ with st.container(key=workspace_key):
                                 st.markdown(f"**Domestic Online E-Commerce:** {money(monthly_lim)} per month")
                                 st.markdown("**Contactless Tap-to-Pay:** Enabled (Max ₹5,000 per transaction without PIN)")
                                 st.markdown("**International Usage:** Disabled (Enabled via travel advisory)")
-                                st.caption("Limits can be adjusted via Vaani AI Copilot or by contacting customer support.")
+                                st.caption("Limits can be adjusted via Vaani AI or by contacting customer support.")
             else:
                 st.info("No cards found.")
     
@@ -1745,7 +1728,7 @@ with st.container(key=workspace_key):
         st.info("Fraud investigation: Dedicated security audit logs and ticket dispute system active.")
     
 
-render_floating_assistant(st, api, st.session_state, in_dock=False)
+render_floating_assistant(st, api, st.session_state, in_dock=True)
 
 st.divider()
 

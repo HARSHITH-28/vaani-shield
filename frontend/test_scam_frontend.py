@@ -8,6 +8,7 @@ from frontend.pages.assistant import (
     transaction_risk_reference_for_conversation,
 )
 from frontend.pages.scam_detection import (
+    assess_message,
     assess_voice_recording,
     begin_assessment_discussion,
     begin_transaction_risk_discussion,
@@ -21,6 +22,50 @@ class FakeAPI:
 
 
 class ScamFrontendTests(unittest.TestCase):
+    def test_consecutive_text_assessments_keep_exact_fresh_result_and_clear_report_cache(self):
+        messages = (
+            "Your bank account will be blocked today. Share your OTP immediately to complete KYC.",
+            "Your grocery order has been delivered. Thank you for shopping.",
+            "Your KYC will expire today. Visit http://secure-bank-verify.example to prevent account suspension.",
+            "Your friend has shared the photos from yesterday.",
+        )
+
+        class SequenceAPI(FakeAPI):
+            def __init__(self):
+                self.calls = []
+
+            def assess_scam_message(self, text, language_hint):
+                self.calls.append((text, language_hint))
+                index = len(self.calls)
+                return {
+                    "assessment_id": f"assessment-{index}",
+                    "created_at": f"2026-01-01T00:00:0{index}+00:00",
+                    "risk_level": ("HIGH", "LOW", "HIGH", "LOW")[index - 1],
+                    "indicators": [{"category": f"signal-{index}"}] if index in (1, 3) else [],
+                }
+
+        api = SequenceAPI()
+        state = {
+            "language_hint": "en-IN",
+            "analysis_reports_cache_key": ("customer-1", None),
+            "analysis_reports_items": [{"assessment_id": "old"}],
+            "analysis_reports_cursor": "old-cursor",
+            "analysis_reports_has_more": True,
+            "analysis_reports_detail": {"assessment_id": "old"},
+            "analysis_reports_detail_key": ("old", "customer-1"),
+        }
+        results = [assess_message(api, state, message) for message in messages]
+
+        self.assertEqual(api.calls, [(message, "en-IN") for message in messages])
+        self.assertEqual([item["risk_level"] for item in results], ["HIGH", "LOW", "HIGH", "LOW"])
+        self.assertEqual([item["assessment_id"] for item in results], [f"assessment-{i}" for i in range(1, 5)])
+        self.assertEqual(results[1]["indicators"], [])
+        self.assertEqual(results[3]["indicators"], [])
+        self.assertIs(state["latest_scam_assessment"], results[-1])
+        self.assertIsNone(state["analysis_reports_cache_key"])
+        self.assertIsNone(state["analysis_reports_items"])
+        self.assertIsNone(state["analysis_reports_detail"])
+
     def test_discussion_starts_fresh_conversation_and_binds_existing_assessment(self):
         state = {
             "latest_scam_assessment": {"assessment_id": "voice-assessment"},

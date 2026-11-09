@@ -10,6 +10,7 @@ FEATURE_SUBFEATURES = {
     ),
     "Scam Detection": (
         "Message Analysis", "Call Analysis", "Transaction Risk", "Investigations",
+        "Analysis Reports",
     ),
     "Customer Support": (
         "Ask Support Assistant", "Create Support Ticket", "Track Complaints",

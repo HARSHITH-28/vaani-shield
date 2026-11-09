@@ -22,6 +22,37 @@ class ScamRiskEngineTests(unittest.TestCase):
         self.assertIn("send your OTP", " ".join(result.indicators[0].evidence))
         self.assertTrue(any("Do not share" in item for item in result.recommended_steps))
 
+    def test_account_blocking_threat_with_otp_request_is_never_low(self):
+        result = analyze_scam_text(
+            "Your account will be blocked today. Reply with your OTP to prevent it."
+        )
+        self.assertIn(result.risk_level, {RiskLevel.HIGH, RiskLevel.CRITICAL})
+        categories = {item.category for item in result.indicators}
+        self.assertIn("credential_request", categories)
+        self.assertIn("account_threat", categories)
+
+    def test_kyc_phishing_and_unverified_link_are_explained(self):
+        result = analyze_scam_text(
+            "Update your KYC now or your account will be blocked. Click https://example.invalid/verify"
+        )
+        self.assertIn(result.risk_level, {RiskLevel.HIGH, RiskLevel.CRITICAL})
+        categories = {item.category for item in result.indicators}
+        self.assertIn("kyc_threat", categories)
+        self.assertIn("suspicious_link", categories)
+        self.assertTrue(all(item.evidence for item in result.indicators))
+
+    def test_legitimate_transaction_notification_is_not_automatically_a_scam(self):
+        result = analyze_scam_text(
+            "Your debit card purchase of INR 450 at Metro Store is approved."
+        )
+        self.assertEqual(result.risk_level, RiskLevel.LOW)
+        self.assertEqual(result.indicators, ())
+
+    def test_ambiguous_bank_contact_remains_low_with_caveat(self):
+        result = analyze_scam_text("Your bank may contact you about your account.")
+        self.assertEqual(result.risk_level, RiskLevel.LOW)
+        self.assertIn("not proof", result.explanation)
+
     def test_upi_pin_request_is_high_without_escalating_from_keyword_alone(self):
         result = analyze_scam_text(
             "A bank support agent asked me to tell them my UPI PIN."

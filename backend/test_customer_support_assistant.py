@@ -21,8 +21,9 @@ from services.assistant_service import (
     _support_category_was_stated,
     _support_staff_workflow_question,
 )
+from services.support_draft_service import get_active_draft, save_or_update_draft
 from services.customer_support_service import create_support_case, get_support_case, list_support_cases
-from services.conversation_service import create_conversation
+from services.conversation_service import create_conversation, save_assistant_turn
 from services.llm_adapters import MockLLMProvider
 from services.llm_interfaces import LLMResponse, LLMToolCall
 from services.principal import CustomerPrincipal
@@ -265,6 +266,26 @@ class CustomerSupportAssistantTests(unittest.TestCase):
             _required_tools_for_question("Show me my recent payments"),
             frozenset({"get_recent_transactions"}),
         )
+        self.assertEqual(
+            _required_tools_for_question("Explain the difference between a debit card and a credit card."),
+            frozenset(),
+        )
+        self.assertEqual(
+            _required_tools_for_question("How can I report an unauthorized transaction?"),
+            frozenset(),
+        )
+        self.assertEqual(
+            _required_tools_for_question("Why was the first suspicious message risky?"),
+            frozenset(),
+        )
+        self.assertEqual(
+            _required_tools_for_question("Why was the first suspicious message risky?", assessment_id=uuid4()),
+            frozenset(),
+        )
+        self.assertEqual(
+            _required_tools_for_question("Explain my previous scam assessment.", assessment_id=uuid4()),
+            frozenset({"get_scam_assessment"}),
+        )
 
     def test_ticket_listing_is_scoped_to_authenticated_customer(self):
         own = self.own_ticket(subject="Arjun card issue")
@@ -338,7 +359,7 @@ class CustomerSupportAssistantTests(unittest.TestCase):
 
     def test_new_native_language_input_updates_automatic_response_language(self):
         hindi = "\u0936\u093f\u0915\u093e\u092f\u0924 \u0926\u0930\u094d\u091c \u0915\u0930\u0947\u0902"
-        kannada = "\u0ca6\u0cc2\u0cb0\u0cc1 \u0ca6\u0cbe\u0916\u0932\u0cbf\u0938\u0cc1"
+        kannada = "\u0ca6\u0cc2\u0cb0\u0cc1 \u0ca6\u0cbe\u0c96\u0cb2\u0cbf\u0cb8\u0cc1"
         first = self.run_llm(hindi, MockLLMProvider([LLMResponse(text="Details? ")]))
         self.assertEqual(first.response_language, "hi-IN")
         following = self.run_llm(kannada, MockLLMProvider([LLMResponse(text="Details? ")]))
@@ -424,8 +445,70 @@ class CustomerSupportAssistantTests(unittest.TestCase):
             transcriber=FakeTranscriber(), llm_provider=provider,
         ).process_turn(self.arjun, request)
         self.assertIsNotNone(response.pending_action)
-        self.assertIn("not been submitted", response.assistant_text)
+        self.assertEqual(response.tool_results[0].status, "needs_confirmation")
         self.assertEqual(self.ticket_count(), 0)
+        self.assertIsNotNone(get_active_draft(self.arjun.customer_key, str(self.conversation)))
+
+    def test_labeled_voice_ticket_slots_continue_draft_without_transaction_risk_tools(self):
+        save_or_update_draft(
+            self.arjun.customer_key, str(self.conversation), status="collecting",
+        )
+
+        class FakeTranscriber:
+            def transcribe(self, _principal, _upload_id, _language_hint):
+                return Transcription(
+                    "Category is fraud and priority is high. Subject is unauthorised transactions.",
+                    ("en-IN",),
+                )
+
+        provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+            "propose_support_ticket",
+            {
+                "category": "transaction", "priority": "HIGH",
+                "subject": "Unauthorised transactions",
+                "description": "Customer reports unauthorised transactions.",
+            },
+            "voice-slot-proposal",
+        ),))])
+        request = AssistantTurnRequest(
+            conversation_id=self.conversation, client_turn_id=uuid4(),
+            input_mode="speech", output_mode="text", audio_upload_id=uuid4(),
+            language_hint="en-IN",
+        )
+
+        result = AssistantOrchestrator(
+            transcriber=FakeTranscriber(), llm_provider=provider,
+        ).process_turn(self.arjun, request)
+
+        self.assertIsNone(result.pending_action)
+        offered_tools = provider.requests[0][1]
+        self.assertEqual([tool.name for tool in offered_tools], ["propose_support_ticket"])
+        self.assertIn("Is the amount deducted", result.assistant_text)
+        self.assertEqual(self.ticket_count(), 0)
+
+    def test_yes_after_priority_question_sets_priority_without_debit_or_submission(self):
+        save_or_update_draft(
+            self.arjun.customer_key, str(self.conversation),
+            category="transaction", subject="UPI payment issue",
+            description="Customer reported a UPI payment issue.",
+            status="collecting", debit_confirmed=False,
+        )
+        save_assistant_turn(
+            self.arjun, self.conversation,
+            response_text="Would you like to mark it as high priority?",
+            response_language="en-IN", requested_output_mode="text",
+        )
+
+        response = self.run_llm("yes", MockLLMProvider([LLMResponse(text="Understood.")]))
+
+        draft = get_active_draft(self.arjun.customer_key, str(self.conversation))
+        self.assertEqual(draft["priority"], "HIGH")
+        self.assertFalse(bool(draft["debit_confirmed"]))
+        self.assertIsNotNone(response.pending_action)
+        self.assertEqual(response.tool_results[0].status, "needs_confirmation")
+        self.assertEqual(self.ticket_count(), 0)
+        self.assertNotIn("share the priority", response.assistant_text.casefold())
+        self.assertIn("Please confirm if you would like me to submit", response.assistant_text)
 
     def _run_spoken_proposal(self, transcript, languages, is_code_mixed):
         class FakeTranscriber:
@@ -445,7 +528,7 @@ class CustomerSupportAssistantTests(unittest.TestCase):
             transcriber=FakeTranscriber(), llm_provider=provider,
         ).process_turn(self.arjun, request)
         self.assertIsNotNone(response.pending_action)
-        self.assertIn("not been submitted", response.assistant_text)
+        self.assertEqual(response.tool_results[0].status, "needs_confirmation")
         self.assertEqual(self.ticket_count(), 0)
         return response
 
@@ -486,9 +569,8 @@ class CustomerSupportAssistantTests(unittest.TestCase):
         self.assertIsNotNone(pending)
         self.assertEqual(pending.original_turn_id, response.turn_id)
         self.assertEqual(pending.conversation_id, response.conversation_id)
-        self.assertIsNone(pending.action.description)
+        self.assertEqual(pending.action.description, "Customer reported: Card payment failed.")
         self.assertEqual(response.tool_results[0].status, "needs_confirmation")
-        self.assertIn("not been submitted", response.assistant_text)
         self.assertEqual(self.ticket_count(), 0)
 
         confirmation = self.client.post(
@@ -504,13 +586,14 @@ class CustomerSupportAssistantTests(unittest.TestCase):
         self.assertEqual(confirmation.status_code, 200, confirmation.text)
         self.assertEqual(confirmation.json()["status"], "executed")
         self.assertEqual(self.ticket_count(), 1)
+        self.assertIsNone(get_active_draft(self.arjun.customer_key, str(self.conversation)))
         ticket_ref = confirmation.json()["action_result"]["data"]["ticket_ref"]
         listed = list_support_cases(self.arjun)
         self.assertEqual(len(listed["items"]), 1)
         self.assertEqual(listed["items"][0]["ticket_ref"], ticket_ref)
         self.assertEqual(
             get_support_case(self.arjun, ticket_ref)["description"],
-            "No additional description provided.",
+            "Customer reported: Card payment failed.",
         )
         self.assertEqual(
             self.client.post(
@@ -527,6 +610,59 @@ class CustomerSupportAssistantTests(unittest.TestCase):
         )
         self.assertEqual(self.ticket_count(), 1)
         self.assertEqual(len(list_support_cases(self.arjun)["items"]), 1)
+        unrelated = self.run_llm(
+            "How can I plan my savings over the next year?",
+            MockLLMProvider([LLMResponse(text="Set a monthly target and review it regularly.")]),
+        )
+        self.assertIsNone(unrelated.pending_action)
+        self.assertIsNone(get_active_draft(self.arjun.customer_key, str(self.conversation)))
+
+    def test_unrelated_card_question_does_not_use_active_support_proposal(self):
+        proposed = self.run_llm(
+            "Please file a complaint: card payment failed, priority high.",
+            MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+                "propose_support_ticket",
+                {"category": "card", "priority": "HIGH", "subject": "Card payment failed"},
+                "propose-before-general-question",
+            ),))]),
+        )
+        self.assertIsNotNone(proposed.pending_action)
+        provider = MockLLMProvider([LLMResponse(text="A debit card uses deposited funds; a credit card uses a credit line.")])
+        answer = self.run_llm("Explain the difference between a debit card and a credit card.", provider)
+        self.assertIn("debit card", answer.assistant_text.lower())
+        self.assertEqual(provider.requests[0][1], ())
+        self.assertEqual(self.ticket_count(), 0)
+
+    def test_support_amount_and_subject_context_excludes_assistant_clarifications(self):
+        self.run_llm(
+            "Please create a complaint: unauthorized debit of INR 2,500, priority high.",
+            MockLLMProvider([LLMResponse(text="Please provide a subject.")]),
+        )
+        provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+            "propose_support_ticket",
+            {"category": "transaction", "priority": "HIGH", "subject": "upi payment issue"},
+            "propose-grounded-subject",
+        ),))])
+        response = self.run_llm("Subject: upi payment issue", provider)
+        self.assertIsNotNone(response.pending_action)
+        self.assertEqual(response.pending_action.action.subject, "upi payment issue")
+        self.assertEqual(response.pending_action.action.amount, 2500)
+
+    def test_acknowledging_proposal_details_does_not_submit_or_recreate_ticket(self):
+        proposed = self.run_llm(
+            "Please file a complaint: card payment failed, priority high.",
+            MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+                "propose_support_ticket",
+                {"category": "card", "priority": "HIGH", "subject": "Card payment failed"},
+                "propose-for-acknowledgement",
+            ),))]),
+        )
+        provider = MockLLMProvider([])
+        acknowledged = self.run_llm("ok details are correct", provider)
+        self.assertEqual(self.ticket_count(), 0)
+        self.assertEqual(acknowledged.pending_action.confirmation_id, proposed.pending_action.confirmation_id)
+        self.assertIn("confirmation button", acknowledged.assistant_text)
+        self.assertEqual(provider.requests, [])
 
     def test_close_tool_only_prepares_explicit_button_confirmation(self):
         ticket = self.own_ticket(subject="Close me")
@@ -628,7 +764,7 @@ class CustomerSupportAssistantTests(unittest.TestCase):
         self.assertEqual(response.pending_action.action.category, "card")
         self.assertEqual(response.pending_action.action.priority, "HIGH")
         self.assertEqual(self.ticket_count(), 0)
-        self.assertEqual(provider.requests[0][3], frozenset())
+        self.assertEqual(provider.requests[0][3], frozenset({"propose_support_ticket"}))
 
 
 if __name__ == "__main__":

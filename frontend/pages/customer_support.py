@@ -88,7 +88,7 @@ def _render_create_form(st, api, state):
                 state["support_selected_ticket_ref"] = created_ticket.get("ticket_ref")
                 state["support_ticket_created_success"] = None
                 from frontend.navigation import request_navigation
-                request_navigation(state, "Customer Support", "My Support Tickets")
+                request_navigation(state, "Customer Support", "Track Complaints")
                 st.rerun()
             if c2.button("➕ Create Another Ticket", key="create_another_ticket_btn"):
                 state["support_ticket_created_success"] = None

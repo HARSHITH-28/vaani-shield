@@ -67,6 +67,7 @@ def save_or_update_draft(
             """
             SELECT * FROM support_ticket_drafts
             WHERE customer_key = ? AND conversation_id = ?
+              AND status IN ('collecting', 'proposed')
             LIMIT 1
             """,
             (customer_key, conv_id),

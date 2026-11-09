@@ -28,6 +28,8 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.gradle/
+android-companion/local.properties
 
 # Logs and temporary files
 *.log

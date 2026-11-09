@@ -275,6 +275,16 @@ def confirm_pending_action(
             "WHERE confirmation_id = ? AND status = 'pending'",
             (now_text, created["ticket_ref"], confirmation_id),
         )
+        # Close the exact conversation's matching proposal in the same
+        # transaction as ticket creation and confirmation consumption.
+        conn.execute(
+            "UPDATE support_ticket_drafts "
+            "SET status = 'submitted', result_ticket_ref = ?, updated_at = ? "
+            "WHERE customer_key = ? AND conversation_id = ? "
+            "AND confirmation_id = ? AND status = 'proposed'",
+            (created["ticket_ref"], now_text, principal.customer_key,
+             conversation_id, confirmation_id),
+        )
         result = ToolExecutionResult(
             tool_call_id=UUID(confirmation_id),
             tool_name="create_support_ticket",

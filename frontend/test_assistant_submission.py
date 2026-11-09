@@ -1,10 +1,16 @@
 """Offline assistant submission, recovery, and optional TTS regressions."""
 
 import unittest
+import inspect
 from unittest.mock import MagicMock
 
 from frontend.api_client import APIError
-from frontend.pages.assistant import _recover_interrupted_turn, _submit
+from frontend.pages.assistant import (
+    _recover_interrupted_turn,
+    _submit_recorded_audio,
+    _submit,
+    render,
+)
 
 
 def response(*, speech=False):
@@ -49,6 +55,80 @@ class AssistantSubmissionTests(unittest.TestCase):
         self.assertEqual(self.state["conversation_messages"][0]["text"], "Show me my last 5 transactions.")
         self.assertEqual(self.state["conversation_messages"][1]["text"], "Here are your last 5 transactions.")
         self.assertIsNone(self.state["assistant_failed_turn"])
+
+    def test_enter_submits_but_shift_enter_inserts_a_newline(self):
+        rendered_source = inspect.getsource(render)
+        self.assertIn("if (e.key === 'Enter' && e.shiftKey) return;", rendered_source)
+        self.assertIn("if (e.key === 'Enter' && !e.shiftKey)", rendered_source)
+        self.assertIn("e.preventDefault();", rendered_source)
+        self.assertIn("sendBtn.click();", rendered_source)
+
+    def test_empty_and_whitespace_messages_are_not_submitted(self):
+        for text in (None, "", "   \t\n"):
+            with self.subTest(text=text):
+                self.assertFalse(_submit(self.api, self.st, self.state, text=text))
+        self.api.send_assistant_turn.assert_not_called()
+        self.assertNotIn("assistant_retry_payload", self.state)
+
+    def test_duplicate_submission_event_is_ignored_while_request_is_running(self):
+        def send(payload):
+            duplicate = _submit(
+                self.api, self.st, self.state, text="Show me my last 5 transactions."
+            )
+            self.assertFalse(duplicate)
+            return response()
+
+        self.api.send_assistant_turn.side_effect = send
+        _submit(self.api, self.st, self.state, text="Show me my last 5 transactions.")
+        self.api.send_assistant_turn.assert_called_once()
+        self.assertFalse(self.state["assistant_submission_in_progress"])
+
+    def test_processing_indicator_closes_and_submission_unlocks_after_failure(self):
+        self.api.send_assistant_turn.side_effect = APIError(
+            503, "The assistant provider is temporarily unavailable."
+        )
+        with self.assertRaises(APIError):
+            _submit(self.api, self.st, self.state, text="Show me my last 5 transactions.")
+        self.st.spinner.assert_called_once()
+        self.assertFalse(self.state["assistant_submission_in_progress"])
+        self.assertEqual(self.state["assistant_failed_turn"]["status"], "failed")
+
+    def test_response_modes_preserve_language_and_only_speak_when_requested(self):
+        for mode, should_fetch_audio in (
+            ("text", False), ("speech", True), ("speech_and_text", True),
+        ):
+            with self.subTest(mode=mode):
+                self.state.update({
+                    "response_mode": mode,
+                    "response_language": "kn-IN",
+                    "language_hint": "kn-IN",
+                })
+                self.state["conversation_messages"] = []
+                self.api.reset_mock()
+                self.api.send_assistant_turn.return_value = response(speech=True)
+                self.api.fetch_audio.return_value = (b"audio", "audio/wav")
+
+                _submit(self.api, self.st, self.state, text="ನನ್ನ ಖಾತೆ ತೋರಿಸಿ")
+
+                payload = self.api.send_assistant_turn.call_args.args[0]
+                self.assertEqual(payload["output_mode"], mode)
+                self.assertEqual(payload["language_hint"], "kn-IN")
+                self.assertEqual(payload["response_language"], "kn-IN")
+                assistant_message = self.state["conversation_messages"][-1]
+                if should_fetch_audio:
+                    self.api.fetch_audio.assert_called_once()
+                    self.assertTrue(assistant_message["speech_audio_id"])
+                    self.assertEqual(
+                        self.state["autoplay_audio_id"], assistant_message["id"]
+                    )
+                else:
+                    self.api.fetch_audio.assert_not_called()
+                    self.assertIsNone(assistant_message["speech_audio_id"])
+                    self.assertIsNone(self.state.get("autoplay_audio_id"))
+                if mode == "speech":
+                    self.assertEqual(assistant_message["text"], "")
+                else:
+                    self.assertEqual(assistant_message["text"], "Here are your last 5 transactions.")
 
     def test_lost_success_response_is_retried_with_same_idempotency_key(self):
         calls = []
@@ -114,13 +194,66 @@ class AssistantSubmissionTests(unittest.TestCase):
     def test_tts_retrieval_failure_keeps_successful_text_response(self):
         self.api.send_assistant_turn.return_value = response(speech=True)
         self.api.fetch_audio.side_effect = RuntimeError("audio transport dropped")
-        self.state["response_mode"] = "speech_and_text"
+        self.state["response_mode"] = "speech"
 
         _submit(self.api, self.st, self.state, text="Show me my last 5 transactions.")
 
         self.assertEqual(self.state["conversation_messages"][-1]["text"], "Here are your last 5 transactions.")
         self.assertIsNone(self.state["assistant_failed_turn"])
         self.st.warning.assert_any_call("Your text response is ready, but its audio could not be loaded.")
+
+    def test_explicit_text_response_mode_is_respected_for_voice_input(self):
+        self.state.update({"response_mode": "text", "response_mode_explicit": True, "wake_word_enabled": True})
+        self.api.upload_audio.return_value = {"audio_upload_id": "upload-1"}
+        self.api.send_assistant_turn.return_value = response()
+        audio = MagicMock()
+        audio.getvalue.return_value = b"wav-audio"
+        audio.name = "question.wav"
+        audio.type = "audio/wav"
+
+        _submit(self.api, self.st, self.state, audio=audio)
+
+        payload = self.api.send_assistant_turn.call_args.args[0]
+        self.assertEqual(payload["input_mode"], "speech")
+        self.assertEqual(payload["output_mode"], "text")
+
+    def test_wake_word_enabled_state_does_not_change_typed_text_response_mode(self):
+        self.state.update({"response_mode": "text", "wake_word_enabled": True})
+        self.api.send_assistant_turn.return_value = response(speech=True)
+
+        _submit(self.api, self.st, self.state, text="Show me my balance.")
+
+        payload = self.api.send_assistant_turn.call_args.args[0]
+        self.assertEqual(payload["output_mode"], "text")
+        self.api.fetch_audio.assert_not_called()
+
+    def test_retry_uses_the_original_output_mode_after_selector_changes(self):
+        self.state.update({
+            "response_mode": "speech_and_text",
+            "assistant_retry_payload": {
+                "conversation_id": "conversation-1",
+                "client_turn_id": "same-turn",
+                "input_mode": "text",
+                "output_mode": "speech",
+                "text": "Show me my balance.",
+                "language_hint": "auto",
+                "response_language": "en-IN",
+            },
+            "assistant_failed_turn": {
+                "client_turn_id": "same-turn", "text": "Show me my balance.",
+                "status": "failed", "error": "temporary failure",
+            },
+        })
+        self.api.send_assistant_turn.return_value = response(speech=True)
+        self.api.fetch_audio.return_value = (b"audio", "audio/wav")
+
+        _submit(self.api, self.st, self.state, retry=True)
+
+        self.assertEqual(
+            self.api.send_assistant_turn.call_args.args[0]["output_mode"], "speech"
+        )
+        self.assertEqual(self.state["conversation_messages"][-1]["text"], "")
+        self.api.fetch_audio.assert_called_once()
 
     def test_retry_does_not_duplicate_existing_assistant_message(self):
         saved = response()
@@ -159,6 +292,64 @@ class AssistantSubmissionTests(unittest.TestCase):
         self.assertEqual(self.state["assistant_failed_turn"]["status"], "failed")
         self.assertEqual(self.state["assistant_failed_turn"]["error"], "The assistant provider is temporarily unavailable.")
         self.assertTrue(any("Show me my last 5 transactions." in item["text"] for item in self.state["conversation_messages"]))
+
+    def test_failed_submission_unlocks_and_can_be_retried(self):
+        self.api.send_assistant_turn.side_effect = [
+            APIError(503, "The assistant provider is temporarily unavailable."),
+            response(),
+        ]
+
+        with self.assertRaises(APIError):
+            _submit(self.api, self.st, self.state, text="Show me my last 5 transactions.")
+        original_payload = self.state["assistant_retry_payload"]
+        self.assertFalse(self.state["assistant_submission_in_progress"])
+        _submit(self.api, self.st, self.state, retry=True)
+
+        self.assertEqual(self.api.send_assistant_turn.call_count, 2)
+        self.assertEqual(self.api.send_assistant_turn.call_args.args[0], original_payload)
+        self.assertIsNone(self.state["assistant_failed_turn"])
+        self.assertIsNone(self.state["assistant_retry_payload"])
+        self.assertFalse(self.state["assistant_submission_in_progress"])
+
+    def test_same_audio_widget_delivery_is_submitted_once(self):
+        class Audio:
+            name = "voice.wav"
+            type = "audio/wav"
+
+            def getvalue(self):
+                return b"recorded audio"
+
+        self.api.upload_audio.return_value = {"audio_upload_id": "upload-1"}
+        self.api.send_assistant_turn.return_value = response(speech=False)
+        audio = Audio()
+
+        self.assertTrue(_submit_recorded_audio(
+            self.api, self.st, self.state, audio, widget_epoch=0,
+        ))
+        self.assertFalse(_submit_recorded_audio(
+            self.api, self.st, self.state, audio, widget_epoch=0,
+        ))
+
+        self.api.upload_audio.assert_called_once()
+        self.api.send_assistant_turn.assert_called_once()
+
+    def test_new_audio_widget_epoch_accepts_same_recording_bytes(self):
+        class Audio:
+            name = "voice.wav"
+            type = "audio/wav"
+
+            def getvalue(self):
+                return b"same content"
+
+        self.api.upload_audio.return_value = {"audio_upload_id": "upload-1"}
+        self.api.send_assistant_turn.return_value = response(speech=False)
+        audio = Audio()
+        _submit_recorded_audio(self.api, self.st, self.state, audio, widget_epoch=0)
+        # A distinct recording may legitimately contain identical bytes.
+        self.assertTrue(_submit_recorded_audio(
+            self.api, self.st, self.state, audio, widget_epoch=1,
+        ))
+        self.assertEqual(self.api.upload_audio.call_count, 2)
 
 
 if __name__ == "__main__":

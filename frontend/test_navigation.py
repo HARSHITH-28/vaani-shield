@@ -20,6 +20,10 @@ class NavigationStateTests(unittest.TestCase):
         for feature, subfeatures in FEATURE_SUBFEATURES.items():
             self.assertEqual(ensure_subfeature(state, feature), subfeatures[0])
         self.assertEqual(len(FEATURE_SUBFEATURES), 5)
+        self.assertEqual(
+            FEATURE_SUBFEATURES["Scam Detection"],
+            ("Message Analysis", "Call Analysis", "Transaction Risk", "Investigations", "Analysis Reports"),
+        )
 
     def test_subfeature_selection_is_retained_per_feature(self):
         state = {}

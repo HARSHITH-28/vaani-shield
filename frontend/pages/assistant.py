@@ -213,10 +213,60 @@ def _send_turn(api, state, payload):
     return response
 
 
+def _send_turn_with_spinner(api, st, state, payload):
+    with st.spinner("Vaani is preparing your response…"):
+        return _send_turn(api, state, payload)
+
+
 def _submit(api, st, state, *, text=None, audio=None, retry=False):
+    """Guard one composer submission against duplicate events and blank text."""
+    if state.get("assistant_submission_in_progress"):
+        return False
+    if not retry and audio is None and not (text or "").strip() and not state.get("pending_attachments"):
+        return False
+    state["assistant_submission_in_progress"] = True
+    try:
+        return _submit_once(api, st, state, text=text, audio=audio, retry=retry)
+    finally:
+        state["assistant_submission_in_progress"] = False
+
+
+def _submit_recorded_audio(api, st, state, audio, *, widget_epoch=None):
+    """Submit one stopped recording, ignoring duplicate widget deliveries."""
+    raw = audio.getvalue() if audio is not None else b""
+    if not raw:
+        st.warning("No audio was captured. Try recording again.")
+        return False
+    digest = hashlib.sha256(raw).hexdigest()
+    widget_epoch = int(state.get("audio_widget_epoch", 0) if widget_epoch is None else widget_epoch)
+    submission_key = (widget_epoch, digest)
+    if (
+        submission_key == state.get("last_audio_submission_key")
+        or state.get("assistant_submission_in_progress")
+        or widget_epoch != int(state.get("audio_widget_epoch", 0))
+    ):
+        return False
+    state["last_audio_submission_key"] = submission_key
+    state["last_audio_hash"] = digest
+    try:
+        result = _submit(api, st, state, audio=audio)
+        return result is not False
+    except Exception:
+        # The audio widget key is advanced by its caller after failure. The
+        # saved retry payload retains its upload ID and idempotency key.
+        state["last_audio_hash"] = None
+        state["audio_widget_epoch"] = int(state.get("audio_widget_epoch", 0)) + 1
+        raise
+
+
+def _submit_once(api, st, state, *, text=None, audio=None, retry=False):
     _ensure_conversation(api, state)
     mode = state.get("response_mode", "text")
-    if (audio is not None or state.get("wake_word_enabled")) and mode == "text":
+    if (
+        audio is not None
+        and mode == "text"
+        and not state.get("response_mode_explicit", False)
+    ):
         mode = "speech_and_text"
     response_language = state["response_language"]
     assessment_id = None
@@ -238,9 +288,12 @@ def _submit(api, st, state, *, text=None, audio=None, retry=False):
         payload = state.get("assistant_retry_payload")
         if not isinstance(payload, dict):
             return
+        # Retries must keep the original idempotency payload and render using
+        # that same output mode, even if the selector changed after failure.
+        mode = payload.get("output_mode", mode)
         text = (failed_turn or {}).get("text")
         assessment_id = payload.get("scam_assessment_id")
-        response = _send_turn(api, state, payload)
+        response = _send_turn_with_spinner(api, st, state, payload)
     elif audio is not None:
         # A new recording starts a new assistant input flow. We cannot inspect
         # its content without transcribing it, so do not attach stale context.
@@ -249,7 +302,7 @@ def _submit(api, st, state, *, text=None, audio=None, retry=False):
         if not raw:
             st.warning("No audio was captured. Try recording again.")
             return
-        with st.status("Uploading and transcribing your recording…", expanded=False):
+        with st.status("Processing voice…", expanded=False) as voice_status:
             uploaded = api.upload_audio(
                 getattr(audio, "name", "question.wav") or "question.wav",
                 raw,
@@ -270,6 +323,7 @@ def _submit(api, st, state, *, text=None, audio=None, retry=False):
                 "recovery_attempted": False,
             }
             response = _send_turn(api, state, payload)
+            voice_status.update(label="Voice response ready", state="complete", expanded=False)
     else:
         assessment_id = assessment_reference_for_text(
             state, state["conversation_id"], text,
@@ -289,8 +343,7 @@ def _submit(api, st, state, *, text=None, audio=None, retry=False):
             "status": "processing",
             "recovery_attempted": False,
         }
-        with st.spinner("Preparing your response…"):
-            response = _send_turn(api, state, payload)
+        response = _send_turn_with_spinner(api, st, state, payload)
 
     persisted_input_text = text
     if pending_docs and text:
@@ -345,13 +398,17 @@ def _submit(api, st, state, *, text=None, audio=None, retry=False):
     audio_message = messages[-1]
     if mode in {"speech", "speech_and_text"} and not audio_message.get("speech_audio_id"):
         st.warning("Your text response is ready, but speech could not be generated.")
-    if audio_message.get("speech_audio_id"):
+    if mode == "text":
+        audio_message["speech_audio_id"] = None
+    if mode in {"speech", "speech_and_text"} and audio_message.get("speech_audio_id"):
         try:
             audio_bytes, media_type = api.fetch_audio(audio_message["speech_audio_id"])
             audio_message["speech_media_type"] = media_type
             state["audio_cache"][audio_message["id"]] = audio_bytes
             state["audio_playback_visible"][audio_message["id"]] = True
             state["autoplay_audio_id"] = audio_message["id"]
+            if mode == "speech":
+                audio_message["text"] = ""
         except APIError as exc:
             st.warning("Your text response is ready, but its audio could not be loaded.")
             if exc.status_code == 401:
@@ -417,6 +474,7 @@ def _handle_file_upload(st, api, state, uploaded_file, is_image: bool = False):
                 state["img_upload_epoch"] = state.get("img_upload_epoch", 0) + 1
             else:
                 state["doc_upload_epoch"] = state.get("doc_upload_epoch", 0) + 1
+            state["composer_menu_epoch"] = state.get("composer_menu_epoch", 0) + 1
             st.rerun()
     except APIError as exc:
         if exc.status_code == 401:
@@ -543,12 +601,16 @@ def render(st, api, state, *, compact=False):
         with st.expander("⚙️ Assistant format & language settings", expanded=False):
             col1, col2 = st.columns([1.1, 2])
             with col1:
+                from frontend.session_state import on_assistant_response_mode_change
                 mode_label = st.selectbox(
-                    "Response format", ["Text", "Speech", "Speech + text"],
-                    index={"text": 0, "speech": 1, "speech_and_text": 2}.get(state["response_mode"], 0),
+                    "Response format", ["Speech", "Text", "Speech + Text"],
+                    index={"speech": 0, "text": 1, "speech_and_text": 2}.get(state["response_mode"], 1),
                     key="assistant_response_mode",
+                    on_change=on_assistant_response_mode_change,
                 )
-                state["response_mode"] = {"Text": "text", "Speech": "speech", "Speech + text": "speech_and_text"}[mode_label]
+                state["response_mode"] = {
+                    "Text": "text", "Speech": "speech", "Speech + Text": "speech_and_text",
+                }[mode_label]
             with col2:
                 render_language_controls(st, state)
 
@@ -578,49 +640,35 @@ def render(st, api, state, *, compact=False):
                         st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-        if state.get("copilot_show_voice"):
-            with st.container(key="copilot-voice-tray"):
-                v_title, v_close = st.columns([5.0, 0.8])
-                with v_title:
-                    st.markdown(
-                        """
-                        <div class="voice-tray-header">
-                          <span class="voice-tray-pulse"></span>
-                          <span class="voice-tray-title">🎙️ Speak in Kannada, English, or Hindi</span>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
+        with st.container(key="copilot-voice-tray"):
+            recording_epoch = int(state.get("audio_widget_epoch", 0))
+            recording = render_voice_input(
+                st, recording_epoch, key_prefix="copilot",
+            )
+            if recording is not None:
+                try:
+                    _submit_recorded_audio(
+                        api, st, state, recording, widget_epoch=recording_epoch,
                     )
-                with v_close:
-                    if st.button("✕", key="btn_close_voice_tray", help="Close voice input"):
-                        state["copilot_show_voice"] = False
-                        st.rerun()
-                recording = render_voice_input(st, state["audio_widget_epoch"])
-                if recording is not None:
-                    digest = hashlib.sha256(recording.getvalue()).hexdigest()
-                    if digest != state.get("last_audio_hash"):
-                        state["last_audio_hash"] = digest
-                        state["copilot_show_voice"] = False
-                        try:
-                            _submit(api, st, state, audio=recording)
-                        except APIError as exc:
-                            state["last_audio_hash"] = digest
-                            _api_error(st, state, exc)
-                            st.rerun()
-                        except ValueError as exc:
-                            st.warning(str(exc))
+                except APIError as exc:
+                    _api_error(st, state, exc)
+                    st.rerun()
+                except ValueError as exc:
+                    st.warning(str(exc))
 
         with st.container(key="copilot-composer-pill"):
-            c_plus, c_input, c_mic, c_send = st.columns([0.45, 3.4, 0.45, 0.45])
+            c_plus, c_input, c_send = st.columns([0.45, 3.4, 0.45])
 
             with c_plus:
-                with st.popover("", icon=":material/add:", help="Actions & attachments", key="composer_actions_popover"):
+                popover_key = f"composer_actions_popover_{state.get('composer_menu_epoch', 0)}"
+                with st.popover("＋", help="Actions & attachments", key=popover_key):
                     st.markdown("<div class='popover-action-title'>Actions</div>", unsafe_allow_html=True)
                     if st.button("🔄 New conversation", key="popover_new_conversation", width="stretch"):
                         try:
                             conversation = create_new_conversation(api, state)
                             state["pending_attachments"] = []
                             state["floating-assistant-conversation"] = conversation["conversation_id"]
+                            state["composer_menu_epoch"] = state.get("composer_menu_epoch", 0) + 1
                             st.rerun()
                         except APIError as exc:
                             if exc.status_code == 401:
@@ -654,9 +702,6 @@ def render(st, api, state, *, compact=False):
 
             input_key = f"copilot_text_input_{state.get('input_epoch', 0)}"
 
-            def _on_enter_press():
-                state["copilot_enter_pressed"] = True
-
             with c_input:
                 entered_text = st.text_area(
                     "Message Vaani...",
@@ -664,48 +709,78 @@ def render(st, api, state, *, compact=False):
                     placeholder="Message Vaani...",
                     label_visibility="collapsed",
                     height=38,
-                    on_change=_on_enter_press,
+                    disabled=bool(state.get("assistant_submission_in_progress")),
                 )
-
-            with c_mic:
-                mic_help = "Close voice input" if state.get("copilot_show_voice") else "Voice input"
-                if st.button("🎙️", key="copilot_mic_toggle_btn", help=mic_help):
-                    state["copilot_show_voice"] = not bool(state.get("copilot_show_voice"))
-                    st.rerun()
 
             with c_send:
                 send_clicked = st.button("➤", key="copilot_send_button", type="primary", help="Send message")
 
-        # Client-side Enter key handler for the textarea to submit on Enter without Shift
-        st.markdown(
+        # Enter submits once; Shift+Enter retains the textarea's newline behavior.
+        st.components.v1.html(
             """
             <script>
             (function() {
+                const parentDoc = window.parent.document;
+                const renderToken = '__COMPOSER_RENDER_TOKEN__';
+                if (window.parent.__vaaniComposerRenderToken !== renderToken) {
+                    window.parent.__vaaniComposerRenderToken = renderToken;
+                    const previousButton = parentDoc.querySelector('.st-key-copilot_send_button button');
+                    const previousArea = parentDoc.querySelector('.st-key-copilot-composer-pill textarea');
+                    if (previousButton) {
+                        delete previousButton.dataset.submitting;
+                        previousButton.disabled = false;
+                    }
+                    if (previousArea) {
+                        delete previousArea.dataset.submitting;
+                        previousArea.disabled = false;
+                    }
+                }
                 function setupEnter() {
-                    const pill = document.querySelector('.st-key-copilot-composer-pill');
+                    const pill = parentDoc.querySelector('.st-key-copilot-composer-pill');
                     if (!pill) return;
                     const area = pill.querySelector('textarea');
                     if (area && !area.dataset.enterBound) {
                         area.dataset.enterBound = 'true';
                         area.addEventListener('keydown', function(e) {
+                            if (e.key === 'Enter' && e.shiftKey) return;
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
-                                const sendBtn = document.querySelector('.st-key-copilot_send_button button');
-                                if (sendBtn) sendBtn.click();
+                                if (!area.value.trim() || area.dataset.submitting === 'true') return;
+                                const sendBtn = parentDoc.querySelector('.st-key-copilot_send_button button');
+                                if (sendBtn && !sendBtn.disabled) {
+                                    sendBtn.click();
+                                }
                             }
+                        });
+                    }
+                    const sendBtn = parentDoc.querySelector('.st-key-copilot_send_button button');
+                    if (area && sendBtn && !sendBtn.dataset.submitBound) {
+                        sendBtn.dataset.submitBound = 'true';
+                        sendBtn.addEventListener('click', function(e) {
+                            if (sendBtn.dataset.submitting === 'true') {
+                                e.preventDefault();
+                                e.stopImmediatePropagation();
+                                return;
+                            }
+                            const hasAttachment = !!parentDoc.querySelector('.composer-attachment-chip');
+                            if (!area.value.trim() && !hasAttachment) return;
+                            sendBtn.dataset.submitting = 'true';
+                            area.dataset.submitting = 'true';
+                            area.disabled = true;
+                            setTimeout(function() { sendBtn.disabled = true; }, 0);
                         });
                     }
                 }
                 setupEnter();
                 setTimeout(setupEnter, 300);
+                new MutationObserver(setupEnter).observe(parentDoc.body, {childList: true, subtree: true});
             })();
             </script>
-            """,
-            unsafe_allow_html=True,
+            """.replace("__COMPOSER_RENDER_TOKEN__", str(state.get("input_epoch", 0))),
+            height=0,
         )
 
-        enter_pressed = state.pop("copilot_enter_pressed", False)
-        if send_clicked or enter_pressed:
+        if send_clicked:
             submitted_text = (entered_text or "").strip()
             has_pending = bool(state.get("pending_attachments"))
             if not submitted_text and has_pending:

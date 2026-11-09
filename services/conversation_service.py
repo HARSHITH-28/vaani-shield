@@ -493,6 +493,78 @@ def get_recent_conversation_turns(
     return [_dict(row) for row in reversed(rows)]
 
 
+def get_conversation_memory(principal, conversation_id):
+    """Read the private, owner-scoped conversational summary metadata."""
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT context_summary_json, context_summary_through_sequence "
+            "FROM conversations WHERE conversation_id = ? AND customer_key = ?",
+            (str(conversation_id), _owner(principal)),
+        ).fetchone()
+        if row is None:
+            raise ConversationNotFoundError
+    return {
+        "summary_json": row["context_summary_json"],
+        "through_sequence": int(row["context_summary_through_sequence"] or 0),
+    }
+
+
+def get_turns_for_memory_summary(
+    principal, conversation_id, *, after_sequence: int, through_sequence: int,
+    limit: int = 40,
+):
+    """Read an owner-scoped, completed, bounded batch older than recent context."""
+    if not 0 <= int(after_sequence) <= int(through_sequence):
+        raise ValueError("Invalid memory summary sequence range")
+    if not 1 <= limit <= 100:
+        raise ValueError("limit must be between 1 and 100")
+    with _connection() as conn:
+        _conversation(conn, principal, conversation_id)
+        rows = conn.execute(
+            "SELECT sequence_number, role, user_text_or_transcript, "
+            "assistant_response_text, processing_status "
+            "FROM conversation_turns WHERE conversation_id = ? AND deleted_at IS NULL "
+            "AND processing_status = 'completed' AND sequence_number > ? "
+            "AND sequence_number <= ? ORDER BY sequence_number ASC LIMIT ?",
+            (str(conversation_id), int(after_sequence), int(through_sequence), limit),
+        ).fetchall()
+    return [_dict(row) for row in rows]
+
+
+def update_conversation_memory(
+    principal, conversation_id, *, summary_json: str | None,
+    expected_through_sequence: int, through_sequence: int,
+):
+    """Advance a conversation summary once; reject stale concurrent updates."""
+    if not 0 <= int(expected_through_sequence) < int(through_sequence):
+        raise ValueError("Invalid memory summary update range")
+    if summary_json is not None and len(summary_json) > 6000:
+        raise ValueError("Conversation memory summary exceeds its storage bound")
+    with _connection() as conn:
+        _conversation(conn, principal, conversation_id)
+        cursor = conn.execute(
+            "UPDATE conversations SET context_summary_json = ?, "
+            "context_summary_through_sequence = ? WHERE conversation_id = ? "
+            "AND customer_key = ? AND context_summary_through_sequence = ?",
+            (summary_json, int(through_sequence), str(conversation_id),
+             _owner(principal), int(expected_through_sequence)),
+        )
+        return cursor.rowcount == 1
+
+
+def reset_conversation_memory(principal, conversation_id, *, expected_through_sequence: int):
+    """Clear an invalid private summary without affecting conversation turns."""
+    with _connection() as conn:
+        _conversation(conn, principal, conversation_id)
+        cursor = conn.execute(
+            "UPDATE conversations SET context_summary_json = NULL, "
+            "context_summary_through_sequence = 0 WHERE conversation_id = ? "
+            "AND customer_key = ? AND context_summary_through_sequence = ?",
+            (str(conversation_id), _owner(principal), int(expected_through_sequence)),
+        )
+        return cursor.rowcount == 1
+
+
 def delete_conversation_turn(principal: CustomerPrincipal, conversation_id, turn_id):
     """Soft-delete one owner-scoped message and cancel only its pending actions.
 
@@ -539,7 +611,9 @@ def delete_conversation_turn(principal: CustomerPrincipal, conversation_id, turn
             (now, turn_id, conversation_id),
         )
         conn.execute(
-            "UPDATE conversations SET updated_at = ? WHERE conversation_id = ? AND customer_key = ?",
+            "UPDATE conversations SET updated_at = ?, context_summary_json = NULL, "
+            "context_summary_through_sequence = 0 "
+            "WHERE conversation_id = ? AND customer_key = ?",
             (now, conversation_id, _owner(principal)),
         )
         if row["role"] == "user" and int(row["sequence_number"]) == 1:

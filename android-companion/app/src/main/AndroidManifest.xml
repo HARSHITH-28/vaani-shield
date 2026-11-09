@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Debug builds permit HTTP for the app's private-LAN development URL; release builds require HTTPS. -->
+    <application android:name=".VaaniShieldApp" android:label="VaaniShield" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="${allowCleartext}">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <service android:name=".service.MessagesNotificationListener" android:label="VaaniShield notification capture" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="false">
+            <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>
+        </service>
+    </application>
+</manifest>

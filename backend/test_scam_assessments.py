@@ -114,6 +114,43 @@ class ScamAssessmentApiTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_consecutive_assessments_are_independent_high_low_high_low(self):
+        messages = (
+            "Your bank account will be blocked today. Share your OTP immediately to complete KYC.",
+            "Your grocery order has been delivered. Thank you for shopping.",
+            "Your KYC will expire today. Visit http://secure-bank-verify.example to prevent account suspension.",
+            "Your friend has shared the photos from yesterday.",
+        )
+        results = []
+        for message in messages:
+            response = self.client.post(
+                "/api/v1/me/scam/assessments/messages",
+                json={"message_text": message, "language_hint": "en-IN"},
+            )
+            self.assertEqual(response.status_code, 201, response.text)
+            results.append(response.json())
+        self.assertEqual([item["risk_level"] for item in results], ["HIGH", "LOW", "HIGH", "LOW"])
+        ids = [item["assessment_id"] for item in results]
+        self.assertEqual(len(set(ids)), 4)
+        self.assertEqual(len({item["created_at"] for item in results}), 4)
+        first_categories = {item["category"] for item in results[0]["indicators"]}
+        second_categories = {item["category"] for item in results[1]["indicators"]}
+        self.assertTrue(first_categories)
+        self.assertEqual(second_categories, set())
+        self.assertEqual(results[1]["indicators"], [])
+        self.assertEqual(results[1]["evidence_strength"], "NONE")
+        self.assertNotIn("account will be blocked", results[1]["explanation"].casefold())
+        for assessment_id, expected in zip(ids, ("HIGH", "LOW", "HIGH", "LOW")):
+            detail = self.client.get(f"/api/v1/me/scam/assessments/{assessment_id}")
+            self.assertEqual(detail.status_code, 200)
+            self.assertEqual(detail.json()["risk_level"], expected)
+            report = self.client.get(
+                f"/api/v1/me/scam/reports/MANUAL_MESSAGE/{assessment_id}"
+            )
+            self.assertEqual(report.status_code, 200, report.text)
+            self.assertEqual(report.json()["report_id"], assessment_id)
+            self.assertEqual(report.json()["risk_level"], expected)
+
     def test_customer_isolation_list_and_detail(self):
         created = self.client.post(
             "/api/v1/me/scam/assessments/messages", json={"message_text": "Hello from my bank."}

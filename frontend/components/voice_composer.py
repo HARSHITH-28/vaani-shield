@@ -6,10 +6,11 @@ from __future__ import annotations
 def render_voice_input(st, epoch: int, *, key_prefix="assistant"):
     """Return a newly captured WAV payload, or None until the user records."""
     return st.audio_input(
-        "Ask by voice",
+        "Record voice message",
         sample_rate=16000,
         key=f"{key_prefix}-audio-{epoch}",
         help="Record a short question in Kannada, English, Hindi, or a mix.",
+        label_visibility="collapsed",
     )
 
 

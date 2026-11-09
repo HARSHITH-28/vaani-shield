@@ -222,6 +222,17 @@ def get_card_details(customer_id):
         customer_id = profile["customer_id"]
     conn = get_connection()
     try:
+        available_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(cards)").fetchall()
+        }
+        optional_card_columns = (
+            "card_network", "cardholder_name", "daily_limit", "monthly_limit",
+            "credit_limit", "available_credit_limit", "outstanding_amount",
+        )
+        optional_projection = ",\n                ".join(
+            f"c.{name}" if name in available_columns else f"NULL AS {name}"
+            for name in optional_card_columns
+        )
         cards = conn.execute("""
             SELECT
                 c.card_id,
@@ -229,19 +240,13 @@ def get_card_details(customer_id):
                 c.last_four,
                 c.status,
                 c.expiry_date,
-                c.card_network,
-                c.cardholder_name,
-                c.daily_limit,
-                c.monthly_limit,
-                c.credit_limit,
-                c.available_credit_limit,
-                c.outstanding_amount,
+                {optional_projection},
                 a.balance AS account_balance
             FROM cards c
             JOIN accounts a ON c.account_id = a.account_id
             WHERE a.customer_id = ?
             ORDER BY c.card_id
-        """, (customer_id,)).fetchall()
+        """.format(optional_projection=optional_projection), (customer_id,)).fetchall()
 
         return [dict(row) for row in cards]
     finally:

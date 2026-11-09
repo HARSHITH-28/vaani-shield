@@ -28,6 +28,8 @@ from frontend.session_state import (
     SHORT_LABEL_TO_CODE,
     initialize_session_state,
     on_composer_language_change,
+    on_dock_response_mode_change,
+    RESPONSE_MODE_CODES,
     on_dock_language_change,
     on_sidebar_language_change,
     sync_response_language,
@@ -82,6 +84,21 @@ class TestLanguageSync(unittest.TestCase):
             self.assertEqual(mock_state["sidebar_assistant_language"], "Hindi")
             self.assertEqual(mock_state["response_language_display"], "Hindi")
             self.assertEqual(mock_state["dock_copilot_language_selector"], "Hindi")
+
+    def test_dock_response_mode_choices_update_canonical_submission_mode(self):
+        self.assertEqual(set(RESPONSE_MODE_CODES), {"Speech", "Text", "Speech + Text"})
+        expected = {"Speech": "speech", "Text": "text", "Speech + Text": "speech_and_text"}
+        for label, code in expected.items():
+            with patch.object(st, "session_state", {
+                "dock_response_mode_selector": label,
+                "assistant_response_mode": "Text",
+                "response_mode": "text",
+                "response_mode_explicit": False,
+            }) as mock_state:
+                on_dock_response_mode_change()
+                self.assertEqual(mock_state["response_mode"], code)
+                self.assertEqual(mock_state["assistant_response_mode"], label)
+                self.assertTrue(mock_state["response_mode_explicit"])
 
     def test_changing_language_through_composer(self):
         """Verify changing voice composer selector updates canonical state and other widget keys."""

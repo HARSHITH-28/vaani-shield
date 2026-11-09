@@ -4,6 +4,8 @@ import tempfile
 import unittest
 import os
 import json
+import math
+import statistics
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -15,8 +17,8 @@ from uuid import uuid4
 
 from services import database
 from dotenv import load_dotenv
-from services.assistant_service import AssistantOrchestrator, AssistantServiceError, LLM_TOOL_NAMES, _history_turn_limit, _orchestration_round_limit, _required_tools_for_question, _response_language_for_text, speech_friendly_text
-from services.conversation_service import create_conversation, list_conversations, save_assistant_turn, save_user_turn, get_conversation_history
+from services.assistant_service import AssistantOrchestrator, AssistantServiceError, LLM_TOOL_NAMES, _history_turn_limit, _orchestration_round_limit, _required_tools_for_question, _response_language_for_text, _memory_summary_sources, _parse_conversation_memory, _select_relevant_memory, _memory_tools_for_follow_up, _resolve_contextual_follow_up, _extract_banking_contexts, _month_period_from_text, speech_friendly_text
+from services.conversation_service import create_conversation, list_conversations, save_assistant_turn, save_user_turn, get_conversation_history, get_conversation_memory, update_conversation_memory, ConversationNotFoundError
 from services.llm_adapters import GeminiLLMProvider, GroqLLMProvider, MockLLMProvider
 from services.llm_interfaces import LLMMessage, LLMProviderError, LLMRateLimited, LLMRequestTooLarge, LLMResponse, LLMTimeout, LLMTool, LLMToolCall
 from services.llm_registry import create_llm_provider, get_provider_settings
@@ -151,6 +153,262 @@ class LLMOrchestrationTests(unittest.TestCase):
         self.assertEqual(len(provider.requests), 1)
         self.assertEqual(response.tool_results[0].status, "succeeded")
 
+    def test_explicit_analyze_requests_route_exact_source_through_assessment_tool(self):
+        messages = (
+            ("Analyze: ", "Your bank account will be blocked today. Share your OTP immediately to complete KYC."),
+            ("Analyze this message: ", "Your grocery order has been delivered. Thank you for shopping."),
+            ("Check whether this SMS is a scam: ", "Your KYC will expire today. Visit http://secure-bank-verify.example to prevent account suspension."),
+            ("Screen this text for phishing: ", "Your friend has shared the photos from yesterday."),
+        )
+        expected_risks = ("HIGH", "LOW", "HIGH", "LOW")
+        conversation_id = None
+        ids = set()
+        assessments = []
+        for index, ((prefix, source_text), expected_risk) in enumerate(zip(messages, expected_risks), start=1):
+            provider = MockLLMProvider([LLMResponse(
+                text="The message is harmless.",
+                tool_calls=(LLMToolCall("assess_current_scam_message", {}, f"explicit-scam-{index}"),),
+            )])
+            orchestrator = AssistantOrchestrator(llm_provider=provider)
+            request = make_request(prefix + source_text, conversation_id)
+            actual_execute = __import__("services.assistant_service", fromlist=["execute_tool"]).execute_tool
+            with patch("services.assistant_service.execute_tool", wraps=actual_execute) as execute:
+                response = orchestrator.process_turn(self.principal, request)
+            conversation_id = response.conversation_id
+
+            execute.assert_called_once()
+            self.assertEqual(execute.call_args.args[0], "assess_current_scam_message")
+            self.assertEqual(execute.call_args.kwargs["current_user_text"], source_text)
+            self.assertEqual(response.scam_assessment.risk_level, expected_risk)
+            self.assertEqual(response.tool_results[0].tool_name, "assess_current_scam_message")
+            self.assertEqual(response.tool_results[0].status, "succeeded")
+            self.assertIn(f"Risk level: {expected_risk}", response.assistant_text)
+            self.assertNotIn("The message is harmless.", response.assistant_text)
+            self.assertNotIn("GROCERIES", response.assistant_text)
+            ids.add(str(response.scam_assessment.assessment_id))
+            assessments.append(response.scam_assessment)
+        self.assertEqual(len(ids), 4)
+        self.assertEqual(len({item.created_at for item in assessments}), 4)
+        self.assertEqual(assessments[1].indicators, [])
+        self.assertEqual(assessments[3].indicators, [])
+
+    def test_fraudulent_question_prefix_extracts_following_message_exactly(self):
+        source = "Your grocery order has been delivered. Thank you for shopping."
+        provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+            "assess_current_scam_message", {}, "fraudulent-question-scam",
+        ),))])
+        actual_execute = __import__("services.assistant_service", fromlist=["execute_tool"]).execute_tool
+        with patch("services.assistant_service.execute_tool", wraps=actual_execute) as execute:
+            response = AssistantOrchestrator(llm_provider=provider).process_turn(
+                self.principal, make_request("Is this message fraudulent? " + source),
+            )
+        execute.assert_called_once()
+        self.assertEqual(execute.call_args.kwargs["current_user_text"], source)
+        self.assertEqual(response.scam_assessment.risk_level, "LOW")
+
+    def test_ambiguous_notification_text_asks_intent_instead_of_running_spending_tools(self):
+        provider = MockLLMProvider([])
+        response = AssistantOrchestrator(llm_provider=provider).process_turn(
+            self.principal,
+            make_request("Your grocery order has been delivered. Thank you for shopping."),
+        )
+        self.assertIn("Would you like me to analyze this message", response.assistant_text)
+        self.assertEqual(response.tool_results, [])
+        self.assertIsNone(response.scam_assessment)
+        self.assertEqual(provider.requests, [])
+
+    def test_voice_transcript_uses_same_explicit_scam_route_and_exact_text(self):
+        from backend.api_models import AssistantTurnRequest
+        from services.speech_interfaces import Transcription
+
+        source_text = "Your grocery order has been delivered. Thank you for shopping."
+        transcript = "Analyze: " + source_text
+
+        class Transcriber:
+            def transcribe(self, _principal, _upload_id, _language_hint):
+                return Transcription(transcript, ("en-IN",))
+
+        provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+            "assess_current_scam_message", {}, "voice-explicit-scam",
+        ),))])
+        request = AssistantTurnRequest(
+            client_turn_id=uuid4(), input_mode="speech", output_mode="text",
+            audio_upload_id=uuid4(), language_hint="en-IN",
+        )
+        actual_execute = __import__("services.assistant_service", fromlist=["execute_tool"]).execute_tool
+        with patch("services.assistant_service.execute_tool", wraps=actual_execute) as execute:
+            response = AssistantOrchestrator(
+                llm_provider=provider, transcriber=Transcriber(),
+            ).process_turn(self.principal, request)
+        execute.assert_called_once()
+        self.assertEqual(execute.call_args.kwargs["current_user_text"], source_text)
+        self.assertEqual(response.scam_assessment.risk_level, "LOW")
+        self.assertEqual(response.tool_results[0].tool_name, "assess_current_scam_message")
+
+    def test_failed_transaction_phrasing_uses_authenticated_status_filtered_recent_read(self):
+        phrases = (
+            "List last my failed transactions",
+            "Show my failed transactions",
+            "List my recent failed payments",
+        )
+        rows = [
+            {"merchant": f"Merchant {i}", "amount": float(i * 10),
+             "status": "FAILED" if i % 2 else "SUCCESS", "transaction_date": f"2026-01-{i:02d}"}
+            for i in range(1, 21)
+        ]
+        for index, phrase in enumerate(phrases, start=1):
+            provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+                "get_recent_transactions", {"limit": 1}, f"failed-transactions-{index}",
+            ),))])
+            with patch("services.assistant_service.execute_tool", return_value=rows) as execute:
+                response = AssistantOrchestrator(llm_provider=provider).process_turn(
+                    self.principal, make_request(phrase),
+                )
+            self.assertEqual(_required_tools_for_question(phrase), frozenset({"get_recent_transactions"}))
+            execute.assert_called_once_with(
+                "get_recent_transactions", self.principal, {"limit": 100},
+            )
+            result_rows = response.tool_results[0].data["result"]
+            self.assertTrue(all(row["status"] == "FAILED" for row in result_rows))
+            self.assertEqual(len(result_rows), 10)
+            self.assertIn("Merchant 1", response.assistant_text)
+            self.assertNotIn("Merchant 2", response.assistant_text)
+
+    def test_failed_transaction_limit_empty_result_and_service_failure_are_distinct(self):
+        provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+            "get_recent_transactions", {"limit": 5}, "failed-limit",
+        ),))])
+        rows = [
+            {"merchant": f"Failed {i}", "amount": 1.0,
+             "status": "FAILED", "transaction_date": "2026-01-01"}
+            for i in range(8)
+        ]
+        with patch("services.assistant_service.execute_tool", return_value=rows) as execute:
+            response = AssistantOrchestrator(llm_provider=provider).process_turn(
+                self.principal, make_request("List last 2 failed transactions"),
+            )
+        execute.assert_called_once_with(
+            "get_recent_transactions", self.principal, {"limit": 100},
+        )
+        self.assertEqual(len(response.tool_results[0].data["result"]), 2)
+        self.assertEqual(response.assistant_text.count(" · FAILED"), 2)
+
+        empty_provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+            "get_recent_transactions", {}, "failed-empty",
+        ),))])
+        with patch("services.assistant_service.execute_tool", return_value=[]) as execute_empty:
+            empty = AssistantOrchestrator(llm_provider=empty_provider).process_turn(
+                self.principal, make_request("Show my failed transactions"),
+            )
+        execute_empty.assert_called_once()
+        self.assertIn("No failed transactions were found", empty.assistant_text)
+        self.assertNotIn("could not retrieve", empty.assistant_text.casefold())
+
+        failed_provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+            "get_recent_transactions", {}, "failed-service-error",
+        ),))])
+        with patch("services.assistant_service.execute_tool", side_effect=RuntimeError("database offline")) as execute_failed:
+            failed = AssistantOrchestrator(llm_provider=failed_provider).process_turn(
+                self.principal, make_request("Show my failed transactions"),
+            )
+        execute_failed.assert_called_once()
+        self.assertEqual(failed.tool_results[0].status, "failed")
+        self.assertIn("could not retrieve failed transaction records", failed.assistant_text)
+        self.assertNotIn("No failed transactions were found", failed.assistant_text)
+
+    def test_failed_transaction_text_and_voice_transcript_share_filter_and_limit(self):
+        from backend.api_models import AssistantTurnRequest
+        from services.speech_interfaces import Transcription
+
+        query = "List last 2 failed transactions"
+        expected_rows = [
+            {"merchant": "Failed A", "amount": 10.0, "status": "FAILED", "transaction_date": "2026-01-01"},
+            {"merchant": "Failed B", "amount": 20.0, "status": "DECLINED", "transaction_date": "2026-01-02"},
+        ]
+        outputs = []
+        for voice in (False, True):
+            provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+                "get_recent_transactions", {"limit": 1}, f"failed-parity-{voice}",
+            ),))])
+            transcriber = None
+            if voice:
+                class Transcriber:
+                    def transcribe(self, _principal, _upload_id, _language_hint):
+                        return Transcription(query, ("en-IN",))
+                transcriber = Transcriber()
+                request = AssistantTurnRequest(
+                    client_turn_id=uuid4(), input_mode="speech", output_mode="text",
+                    audio_upload_id=uuid4(), language_hint="en-IN",
+                )
+            else:
+                request = make_request(query)
+            with patch("services.assistant_service.execute_tool", return_value=expected_rows) as execute:
+                response = AssistantOrchestrator(
+                    llm_provider=provider, transcriber=transcriber,
+                ).process_turn(self.principal, request)
+            execute.assert_called_once_with(
+                "get_recent_transactions", self.principal, {"limit": 100},
+            )
+            outputs.append((response.assistant_text, response.tool_results[0].data["result"]))
+        self.assertEqual(outputs[0], outputs[1])
+        self.assertEqual(len(outputs[0][1]), 2)
+
+    def test_new_banking_and_scam_intents_do_not_reuse_old_financial_answers(self):
+        conversation_id = None
+        financial_provider = MockLLMProvider([
+            LLMResponse(tool_calls=(LLMToolCall(
+                "get_category_breakdown", {}, "old-category-read",
+            ),)),
+            LLMResponse(text="GROCERIES ₹12,950; SHOPPING ₹11,550."),
+        ])
+        with patch("services.assistant_service.execute_tool", return_value=[
+            {"category": "GROCERIES", "amount": 12950},
+            {"category": "SHOPPING", "amount": 11550},
+        ]):
+            financial = AssistantOrchestrator(llm_provider=financial_provider).process_turn(
+                self.principal, make_request("Show my spending by category"),
+            )
+        conversation_id = financial.conversation_id
+
+        banking_provider = MockLLMProvider([
+            LLMResponse(tool_calls=(LLMToolCall(
+                "get_recent_transactions", {"limit": 5}, "fresh-transaction-read",
+            ),)),
+            LLMResponse(text="The authenticated transaction records are ready."),
+        ])
+        tx_rows = [{
+            "transaction_date": "2026-11-01", "merchant": "Fresh Market",
+            "amount": 90.0, "status": "SUCCESS", "transaction_ref": "TR-" + "A" * 48,
+        }]
+        with patch("services.assistant_service.execute_tool", return_value=tx_rows) as read:
+            banking = AssistantOrchestrator(llm_provider=banking_provider).process_turn(
+                self.principal,
+                make_request("List my 5 transaction recent", conversation_id),
+            )
+        read.assert_called_once_with("get_recent_transactions", self.principal, {"limit": 5})
+        banking_prompt = " ".join(message.content for message in banking_provider.requests[0][0])
+        self.assertIn("List my 5 transaction recent", banking_prompt)
+        self.assertNotIn("GROCERIES", banking_prompt)
+        self.assertNotIn("12,950", banking_prompt)
+        self.assertEqual(len(banking.tool_results[0].data["result"]), 1)
+
+        scam_provider = MockLLMProvider([LLMResponse(tool_calls=(LLMToolCall(
+            "assess_current_scam_message", {}, "fresh-scam-after-banking",
+        ),))])
+        source = "Your grocery order has been delivered. Thank you for shopping."
+        actual_execute = __import__("services.assistant_service", fromlist=["execute_tool"]).execute_tool
+        with patch("services.assistant_service.execute_tool", wraps=actual_execute) as assess:
+            scam = AssistantOrchestrator(llm_provider=scam_provider).process_turn(
+                self.principal, make_request("Analyze: " + source, conversation_id),
+            )
+        assess.assert_called_once()
+        self.assertEqual(assess.call_args.kwargs["current_user_text"], source)
+        scam_prompt = " ".join(message.content for message in scam_provider.requests[0][0])
+        self.assertNotIn("Fresh Market", scam_prompt)
+        self.assertNotIn("GROCERIES", scam_prompt)
+        self.assertEqual(scam.scam_assessment.risk_level, "LOW")
+        self.assertEqual([item.tool_name for item in scam.tool_results], ["assess_current_scam_message"])
+
     def test_scam_request_without_message_asks_for_content_without_provider_call(self):
         for question in (
             "Is this a scam message?",
@@ -256,36 +514,55 @@ class LLMOrchestrationTests(unittest.TestCase):
             self.assertEqual(response.tool_results[0].status, "failed")
             self.assertEqual(self._scam_assessment_count(), 0)
 
-    def test_multistep_tool_use_and_results_return_to_model(self):
+    def test_simple_spending_request_exposes_only_the_summary_tool(self):
         provider = MockLLMProvider([
             LLMResponse(tool_calls=(LLMToolCall("get_spending_summary", {}, "call-1"),)),
-            LLMResponse(tool_calls=(LLMToolCall("get_category_breakdown", {}, "call-2"),)),
-            LLMResponse(tool_calls=(LLMToolCall("get_top_merchants", {}, "call-3"),)),
-            LLMResponse(text="Your spending is summarized by total and category."),
+            LLMResponse(text="Your spending summary is ready."),
         ])
         orchestrator = AssistantOrchestrator(llm_provider=provider)
-        with patch("services.assistant_service.execute_tool", side_effect=[
-            {"total_debits": 1200}, [{"category": "Food", "amount": 500}], [{"merchant": "Demo Shop", "total_spent": 500}],
-        ]) as execute:
-            response = orchestrator.process_turn(self.principal, make_request())
-        self.assertEqual(execute.call_count, 3)
-        self.assertEqual([r.tool_name for r in response.tool_results], [
-            "get_spending_summary", "get_category_breakdown", "get_top_merchants",
-        ])
+        with patch("services.assistant_service.execute_tool", return_value={"total_debits": 1200}) as execute:
+            response = orchestrator.process_turn(
+                self.principal, make_request("List my spending")
+            )
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual([r.tool_name for r in response.tool_results], ["get_spending_summary"])
         self.assertEqual(response.tool_results[0].data, {"total_debits": 1200})
-        self.assertIn("Your spending is summarized", response.assistant_text)
+        self.assertIn("Total debits: ₹1,200.00", response.assistant_text)
         saved = get_conversation_history(self.principal, response.conversation_id)
         self.assertEqual([turn["role"] for turn in saved["items"]], ["user", "assistant"])
         self.assertEqual(saved["items"][-1]["assistant_response_text"], response.assistant_text)
-        second_messages = provider.requests[1][0]
-        self.assertTrue(any(m.role == "tool" and "total_debits" in m.content for m in second_messages))
-        self.assertEqual(
-            {tool.name for tool in provider.requests[0][1]},
-            {"get_spending_summary", "get_category_breakdown", "get_top_merchants"},
-        )
+        self.assertEqual({tool.name for tool in provider.requests[0][1]}, {"get_spending_summary"})
+        self.assertEqual(len(provider.requests), 2)
         self.assertNotIn("get_customer_profile", {tool.name for tool in provider.requests[0][1]})
         self.assertNotIn("get_customer_context", {tool.name for tool in provider.requests[0][1]})
         self.assertTrue({"get_card_details", "get_loan_details"}.issubset(LLM_TOOL_NAMES))
+
+    def test_explicit_spending_overview_reads_summary_categories_and_merchants(self):
+        question = "Show my spending summary, spending categories, and top merchants."
+        expected = {
+            "get_spending_summary", "get_category_breakdown", "get_top_merchants",
+        }
+        self.assertEqual(_required_tools_for_question(question), expected)
+
+        provider = MockLLMProvider([])
+        outputs = {
+            "get_spending_summary": {"total_debits": 1200},
+            "get_category_breakdown": [{"category": "Food", "amount": 500}],
+            "get_top_merchants": [{"merchant": "Demo Shop", "total_spent": 500}],
+        }
+        with patch(
+            "services.assistant_service.execute_tool",
+            side_effect=lambda name, _principal, _arguments: outputs[name],
+        ) as execute:
+            response = AssistantOrchestrator(llm_provider=provider).process_turn(
+                self.principal, make_request(question)
+            )
+
+        self.assertEqual(execute.call_count, 3)
+        self.assertEqual({item.tool_name for item in response.tool_results}, expected)
+        self.assertEqual(provider.requests, [])
+        for section in ("Spending summary:", "Spending by category:", "Top merchants:"):
+            self.assertIn(section, response.assistant_text)
 
     def test_llm_context_uses_latest_twelve_and_includes_current_user_once(self):
         conversation = create_conversation(self.principal)
@@ -307,6 +584,10 @@ class LLMOrchestrationTests(unittest.TestCase):
 
         current_question = "Show me my last five transactions."
         provider = MockLLMProvider([
+            LLMResponse(text=json.dumps({
+                "preferences": [], "goals": [], "ongoing_tasks": [],
+                "decisions": [], "topic_refs": [],
+            })),
             LLMResponse(tool_calls=(LLMToolCall(
                 "get_recent_transactions", {"limit": 5}, "recent-turn-call",
             ),)),
@@ -319,14 +600,14 @@ class LLMOrchestrationTests(unittest.TestCase):
                 make_request(current_question, conversation_id),
             )
 
-        initial_messages = provider.requests[0][0]
+        initial_messages = provider.requests[1][0]
         self.assertEqual(len(initial_messages), 12)
         self.assertEqual(initial_messages[-1].role, "user")
         self.assertEqual(initial_messages[-1].content, current_question)
         self.assertEqual(
             sum(message.content == current_question for message in initial_messages), 1
         )
-        follow_up_messages = provider.requests[1][0]
+        follow_up_messages = provider.requests[2][0]
         self.assertEqual(
             sum(message.content == current_question for message in follow_up_messages), 1
         )
@@ -339,6 +620,383 @@ class LLMOrchestrationTests(unittest.TestCase):
             "get_recent_transactions", self.principal, {"limit": 5}
         )
         self.assertEqual(str(response.conversation_id), conversation_id)
+
+    def test_conversation_memory_is_bounded_selective_and_never_a_banking_source(self):
+        from services.assistant_service import _redact_memory_text
+        summary = _parse_conversation_memory(json.dumps({
+            "preferences": ["Please use concise explanations"],
+            "goals": ["User plans to save INR 10,000 monthly"],
+            "ongoing_tasks": ["Discuss holiday planning"],
+            "decisions": ["Current balance is INR 99,999"],
+            "topic_refs": ["Earlier topic involved get_recent_transactions"],
+            "banking_topics": ["get_recent_transactions", "DROP TABLE customers"],
+        }))
+        self.assertEqual(summary["preferences"], ["Please use concise explanations"])
+        self.assertEqual(summary["goals"], ["User plans to save INR 10,000 monthly"])
+        self.assertEqual(summary["decisions"], [])
+        self.assertEqual(summary["banking_topics"], ["get_recent_transactions"])
+        self.assertNotIn("OTP 123456", _redact_memory_text("OTP 123456"))
+        selected = _select_relevant_memory(summary, "Can you keep explanations concise?")
+        self.assertTrue(any("concise" in item for item in selected))
+        self.assertEqual(_select_relevant_memory(summary, "What is the weather tomorrow?"), [])
+        self.assertEqual(
+            _memory_tools_for_follow_up("Which one was largest?", summary),
+            frozenset({"find_large_transactions"}),
+        )
+
+    def test_remembered_savings_goal_allows_simple_arithmetic_without_banking_tools(self):
+        conversation_id = create_conversation(self.principal)["conversation_id"]
+        for index in range(14):
+            save_user_turn(
+                self.principal, conversation_id, input_type="text",
+                text_or_transcript=("Remember that my monthly savings goal is INR 12,000."
+                                    if index == 0 else f"Earlier planning question {index}"),
+                requested_output_mode="text",
+            )
+            save_assistant_turn(
+                self.principal, conversation_id, response_text=f"Planning response {index}",
+                requested_output_mode="text",
+            )
+        summary = json.dumps({
+            "preferences": [], "goals": ["User's monthly savings goal is INR 12,000"],
+            "ongoing_tasks": [], "decisions": [], "topic_refs": [],
+            "banking_topics": [], "banking_contexts": [],
+        })
+        self.assertTrue(update_conversation_memory(
+            self.principal, conversation_id, summary_json=summary,
+            expected_through_sequence=0, through_sequence=28,
+        ))
+        provider = MockLLMProvider([LLMResponse(
+            text="Your conversational goal is INR 12,000 per month, or INR 96,000 over eight months."
+        )])
+        response = AssistantOrchestrator(llm_provider=provider).process_turn(
+            self.principal,
+            make_request("What was my savings goal, and how much is that over eight months?", conversation_id),
+        )
+        self.assertIn("96,000", response.assistant_text)
+        self.assertEqual(provider.requests[0][1], ())
+        self.assertTrue(any("12,000" in message.content for message in provider.requests[0][0]))
+
+    def test_memory_summary_excludes_support_proposals_and_financial_answers(self):
+        turns = [
+            {"sequence_number": 1, "role": "user", "user_text_or_transcript": "Create a support ticket for a failed payment"},
+            {"sequence_number": 2, "role": "assistant", "assistant_response_text": "I propose a high priority ticket for ₹5,000"},
+            {"sequence_number": 3, "role": "user", "user_text_or_transcript": "Priority: urgent"},
+            {"sequence_number": 4, "role": "assistant", "assistant_response_text": "Please confirm the support ticket"},
+            {"sequence_number": 5, "role": "user", "user_text_or_transcript": "What is my account balance?"},
+            {"sequence_number": 6, "role": "assistant", "assistant_response_text": "Your balance is ₹123456"},
+        ]
+        sources, topics = _memory_summary_sources(turns)
+        serialized = json.dumps(sources)
+        self.assertNotIn("ticket", serialized.casefold())
+        self.assertNotIn("₹5,000", serialized)
+        self.assertNotIn("₹123456", serialized)
+        self.assertIn("get_account_balance", topics)
+
+    def test_long_history_summary_persists_and_preserves_recent_messages(self):
+        conversation_id = create_conversation(self.principal)["conversation_id"]
+        for index in range(14):
+            save_user_turn(
+                self.principal, conversation_id, input_type="text",
+                text_or_transcript=(
+                    "I prefer concise explanations" if index == 0 else
+                    "Show my transactions at DMart last month" if index == 1 else
+                    f"Old discussion item {index}"
+                ),
+                requested_output_mode="text",
+            )
+            save_assistant_turn(
+                self.principal, conversation_id,
+                response_text=("I will keep future replies concise" if index == 0 else f"Response item {index}"),
+                requested_output_mode="text",
+            )
+        provider = MockLLMProvider([
+            LLMResponse(text=json.dumps({
+                "preferences": ["User prefers concise explanations"],
+                "goals": [], "ongoing_tasks": [], "decisions": [], "topic_refs": [],
+            })),
+            LLMResponse(text="I will keep the answer concise."),
+        ])
+        response = AssistantOrchestrator(llm_provider=provider).process_turn(
+            self.principal, make_request("Please keep explanations concise", conversation_id),
+        )
+        memory = get_conversation_memory(self.principal, conversation_id)
+        self.assertGreater(memory["through_sequence"], 0)
+        self.assertIn("concise", memory["summary_json"])
+        parsed_memory = _parse_conversation_memory(memory["summary_json"])
+        merchant_context = next(
+            item for item in parsed_memory["banking_contexts"]
+            if item.get("merchant") == "DMart"
+        )
+        self.assertEqual(merchant_context["period"], _month_period_from_text("last month"))
+        self.assertEqual(len(provider.requests), 2)
+        first_messages = provider.requests[1][0]
+        self.assertEqual(sum(m.content == "Please keep explanations concise" for m in first_messages), 1)
+        self.assertTrue(any(m.content == "Response item 13" for m in first_messages))
+        self.assertTrue(any("Conversation memory" in m.content for m in first_messages))
+        self.assertEqual(str(response.conversation_id), conversation_id)
+
+    def test_contextual_failed_transaction_filter_uses_fresh_scoped_tool_results(self):
+        conversation_id = create_conversation(self.principal)["conversation_id"]
+        save_user_turn(
+            self.principal, conversation_id, input_type="text",
+            text_or_transcript="Show my last 5 transactions", requested_output_mode="text",
+        )
+        save_assistant_turn(
+            self.principal, conversation_id,
+            response_text="I found your recent transactions.", requested_output_mode="text",
+        )
+        provider = MockLLMProvider([
+            LLMResponse(tool_calls=(LLMToolCall(
+                "get_recent_transactions", {"limit": 1}, "failed-follow-up-call",
+            ),)),
+            LLMResponse(text="Here are the failed transactions from your latest five records."),
+        ])
+        rows = [
+            {"amount": 100, "status": "SUCCESS", "merchant": "Shop A"},
+            {"amount": 70, "status": "FAILED", "merchant": "Shop B"},
+            {"amount": 20, "status": "DECLINED", "merchant": "Shop C"},
+        ]
+        with patch("services.assistant_service.execute_tool", return_value=rows) as execute:
+            response = AssistantOrchestrator(llm_provider=provider).process_turn(
+                self.principal, make_request("Show only the failed ones", conversation_id),
+            )
+        execute.assert_called_once_with(
+            "get_recent_transactions", self.principal, {"limit": 5},
+        )
+        result = next(item for item in response.tool_results if item.tool_name == "get_recent_transactions")
+        filtered = result.data["result"]
+        self.assertEqual([item["status"] for item in filtered], ["FAILED", "DECLINED"])
+        self.assertTrue(all(item["merchant"] != "Shop A" for item in filtered))
+
+    def test_merchant_spending_follow_up_uses_exact_successful_debit_total(self):
+        conversation_id = create_conversation(self.principal)["conversation_id"]
+        save_user_turn(
+            self.principal, conversation_id, input_type="text",
+            text_or_transcript="Show my transactions at DMart", requested_output_mode="text",
+        )
+        save_assistant_turn(
+            self.principal, conversation_id, response_text="DMart transactions were retrieved.",
+            requested_output_mode="text",
+        )
+        provider = MockLLMProvider([
+            LLMResponse(tool_calls=(LLMToolCall(
+                "search_transactions", {}, "merchant-follow-up-call",
+            ),)),
+            LLMResponse(text="You spent INR 150 at DMart."),
+        ])
+        rows = [
+            {"amount": 120, "status": "SUCCESS", "transaction_type": "DEBIT", "merchant": "DMart"},
+            {"amount": 20, "status": "FAILED", "transaction_type": "DEBIT", "merchant": "DMart"},
+            {"amount": 50, "status": "SUCCESS", "transaction_type": "CREDIT", "merchant": "DMart"},
+            {"amount": 30, "status": "SUCCESS", "transaction_type": "DEBIT", "merchant": "DMart"},
+        ]
+        with patch("services.assistant_service.execute_tool", return_value=rows) as execute:
+            response = AssistantOrchestrator(llm_provider=provider).process_turn(
+                self.principal, make_request("How much did I spend there?", conversation_id),
+            )
+        execute.assert_called_once_with(
+            "search_transactions", self.principal,
+            {"merchant": "DMart", "transaction_type": "DEBIT"},
+        )
+        result = next(item for item in response.tool_results if item.tool_name == "search_transactions")
+        summary = result.data
+        self.assertEqual(summary["total_spent"], 150.0)
+        self.assertEqual(summary["transaction_count"], 2)
+        self.assertEqual([item["amount"] for item in summary["transactions"]], [120, 30])
+
+    def test_memory_summary_provider_failure_does_not_fail_turn_or_advance_watermark(self):
+        conversation_id = create_conversation(self.principal)["conversation_id"]
+        for index in range(14):
+            save_user_turn(
+                self.principal, conversation_id, input_type="text",
+                text_or_transcript=f"I prefer concise response style item {index}",
+                requested_output_mode="text",
+            )
+            save_assistant_turn(
+                self.principal, conversation_id, response_text=f"Response item {index}",
+                requested_output_mode="text",
+            )
+        provider = MockLLMProvider([
+            LLMProviderError("private provider detail"),
+            LLMResponse(text="A normal response."),
+        ])
+        with self.assertLogs("services.assistant_service", level="INFO") as logs:
+            response = AssistantOrchestrator(llm_provider=provider).process_turn(
+                self.principal, make_request("An unrelated query", conversation_id),
+            )
+        memory = get_conversation_memory(self.principal, conversation_id)
+        self.assertEqual(memory["through_sequence"], 0)
+        self.assertIsNone(memory["summary_json"])
+        self.assertNotIn("private provider detail", "\n".join(logs.output))
+        self.assertEqual(response.assistant_text, "A normal response.")
+
+    def test_memory_is_owner_scoped_and_banking_follow_up_fetches_fresh_data(self):
+        conversation_id = create_conversation(self.principal)["conversation_id"]
+        save_user_turn(
+            self.principal, conversation_id, input_type="text",
+            text_or_transcript="Show my recent transactions", requested_output_mode="text",
+        )
+        save_assistant_turn(
+            self.principal, conversation_id, response_text="Transactions were retrieved.",
+            requested_output_mode="text",
+        )
+        update_conversation_memory(
+            self.principal, conversation_id,
+            summary_json=json.dumps({
+                "preferences": [], "goals": [], "ongoing_tasks": [], "decisions": [],
+                "topic_refs": [], "banking_topics": ["get_recent_transactions"],
+            }), expected_through_sequence=0, through_sequence=1,
+        )
+        with self.assertRaises(ConversationNotFoundError):
+            get_conversation_memory(make_principal("demo-priya"), conversation_id)
+        provider = MockLLMProvider([
+            LLMResponse(tool_calls=(LLMToolCall(
+                "get_recent_transactions", {}, "memory-follow-up-call",
+            ),)),
+            LLMResponse(text="I checked the largest transactions using current records."),
+        ])
+        rows = [
+            {"amount": 12, "transaction_type": "DEBIT", "merchant": "Small"},
+            {"amount": 99, "transaction_type": "DEBIT", "merchant": "Largest"},
+        ]
+        with patch("services.assistant_service.execute_tool", return_value=rows) as execute:
+            response = AssistantOrchestrator(llm_provider=provider).process_turn(
+                self.principal, make_request("Which one was largest?", conversation_id),
+            )
+        execute.assert_called_once_with(
+            "get_recent_transactions", self.principal, {"limit": 10},
+        )
+        self.assertEqual(response.tool_results[0].data["result"][0]["merchant"], "Largest")
+
+    def test_contextual_transaction_follow_up_plans_resolve_filters_and_positions(self):
+        def history_for(prompt):
+            return [
+                {"role": "user", "user_text_or_transcript": prompt},
+                {"role": "assistant", "assistant_response_text": "Earlier transaction results."},
+                {"role": "user", "user_text_or_transcript": "CURRENT QUERY"},
+            ]
+
+        failed = _resolve_contextual_follow_up(
+            "Show only the failed ones", history_for("Show my last 5 transactions"),
+        )
+        self.assertEqual(failed["tool_name"], "get_recent_transactions")
+        self.assertEqual(failed["arguments"], {"limit": 5})
+        self.assertEqual(failed["status_filter"], "FAILED")
+
+        largest = _resolve_contextual_follow_up(
+            "Which one was the largest?", history_for("Show my transactions"),
+        )
+        self.assertEqual(largest["ranking"], "desc")
+        self.assertEqual(largest["tool_name"], "get_recent_transactions")
+
+        second = _resolve_contextual_follow_up(
+            "Explain the second transaction", history_for("Show my last 5 transactions"),
+        )
+        self.assertEqual(second["position"], 2)
+        self.assertEqual(second["arguments"]["limit"], 5)
+
+        merchant_parent = history_for("Show my transactions at DMart")
+        merchant_parent[-1]["user_text_or_transcript"] = "How much did I spend there?"
+        merchant = _resolve_contextual_follow_up("How much did I spend there?", merchant_parent)
+        self.assertEqual(merchant["tool_name"], "search_transactions")
+        self.assertEqual(merchant["arguments"], {"merchant": "DMart", "transaction_type": "DEBIT"})
+        self.assertTrue(merchant["summarize_debits"])
+
+        explicit_merchant = _resolve_contextual_follow_up(
+            "Show my transactions at DMart", [],
+        )
+        self.assertEqual(explicit_merchant["arguments"], {"merchant": "DMart"})
+
+    def test_month_before_reference_is_calendar_correct_and_ambiguous_context_clarifies(self):
+        fixed_now = datetime(2026, 11, 9, tzinfo=timezone.utc)
+        history = [
+            {"role": "user", "user_text_or_transcript": "How much did I spend last month?"},
+            {"role": "assistant", "assistant_response_text": "Monthly spending retrieved."},
+            {"role": "user", "user_text_or_transcript": "What about the month before that?"},
+        ]
+        plan = _resolve_contextual_follow_up(
+            "What about the month before that?", history, now=fixed_now,
+        )
+        self.assertEqual(plan["tool_name"], "get_monthly_transaction_summary")
+        self.assertEqual(plan["arguments"], {"year": 2026, "month": 9})
+        self.assertIn("clarification", _resolve_contextual_follow_up(
+            "Which one was largest?", [{"role": "user", "user_text_or_transcript": "Which one was largest?"}],
+        ))
+
+    def test_contextual_follow_up_uses_validated_summary_constraints_and_support_barrier(self):
+        memory = {"banking_contexts": [{
+            "tools": ["search_transactions"], "merchant": "DMart",
+        }]}
+        plan = _resolve_contextual_follow_up("How much did I spend there?", [], memory)
+        self.assertEqual(plan["arguments"]["merchant"], "DMart")
+        self.assertEqual(_extract_banking_contexts([{
+            "role": "user", "user_text_or_transcript": "Show my transactions at DMart last month",
+        }], now=datetime(2026, 11, 9, tzinfo=timezone.utc)), [{
+            "tools": ["search_transactions"], "merchant": "DMart", "period": {"year": 2026, "month": 10},
+        }])
+        history = [
+            {"role": "user", "user_text_or_transcript": "Show my last 5 transactions"},
+            {"role": "assistant", "assistant_response_text": "Transactions were retrieved."},
+            {"role": "user", "user_text_or_transcript": "Create a support ticket for a failed payment"},
+            {"role": "assistant", "assistant_response_text": "I propose a ticket."},
+            {"role": "user", "user_text_or_transcript": "Which one was largest?"},
+        ]
+        self.assertIn("clarification", _resolve_contextual_follow_up(
+            "Which one was largest?", history,
+        ))
+
+    def test_multilingual_transaction_follow_up_patterns_resolve(self):
+        history = [
+            {"role": "user", "user_text_or_transcript": "Show my recent transactions"},
+            {"role": "assistant", "assistant_response_text": "Transactions were retrieved."},
+            {"role": "user", "user_text_or_transcript": "CURRENT QUERY"},
+        ]
+        cases = (
+            ("\u0938\u092c\u0938\u0947 \u092c\u0921\u093c\u093e \u0915\u094c\u0928 \u0938\u093e \u0925\u093e?", "ranking", "desc"),
+            ("\u0926\u0942\u0938\u0930\u093e \u0932\u0947\u0928\u0926\u0947\u0928 \u0938\u092e\u091d\u093e\u090f\u0902", "position", 2),
+            ("\u0ca6\u0cca\u0ca1\u0ccd\u0ca1 \u0cb5\u0ccd\u0caf\u0cb5\u0cb9\u0cbe\u0cb0 \u0caf\u0cbe\u0cb5\u0cc1\u0ca6\u0cc1?", "ranking", "desc"),
+            ("\u0cb5\u0cbf\u0cab\u0cb2\u0cb5\u0cbe\u0ca6\u0cb5\u0cc1\u0c97\u0cb3\u0ca8\u0ccd\u0ca8\u0cc1 \u0cae\u0cbe\u0ca4\u0ccd\u0cb0 \u0ca4\u0ccb\u0cb0\u0cbf\u0cb8\u0cbf", "status_filter", "FAILED"),
+        )
+        for query, field, expected in cases:
+            with self.subTest(query=query):
+                history[-1]["user_text_or_transcript"] = query
+                plan = _resolve_contextual_follow_up(query, history)
+                self.assertEqual(plan[field], expected)
+
+    def test_summary_updates_are_incremental_and_context_stays_bounded(self):
+        conversation_id = create_conversation(self.principal)["conversation_id"]
+        for index in range(14):
+            save_user_turn(
+                self.principal, conversation_id, input_type="text",
+                text_or_transcript=f"I prefer concise explanations about subject {index}",
+                requested_output_mode="text",
+            )
+            save_assistant_turn(
+                self.principal, conversation_id, response_text=f"Discussion response {index}",
+                requested_output_mode="text",
+            )
+        provider = MockLLMProvider([
+            LLMResponse(text=json.dumps({
+                "preferences": ["User prefers concise explanations"],
+                "goals": [], "ongoing_tasks": [], "decisions": [], "topic_refs": [],
+            })),
+            LLMResponse(text="First answer."),
+        ])
+        orchestrator = AssistantOrchestrator(llm_provider=provider)
+        orchestrator.process_turn(
+            self.principal, make_request("Please keep explanations concise", conversation_id),
+        )
+        memory_before = get_conversation_memory(self.principal, conversation_id)
+        self.assertLessEqual(len(provider.requests[1][0]), 13)
+        second_provider = MockLLMProvider([LLMResponse(text="Second answer.")])
+        orchestrator = AssistantOrchestrator(llm_provider=second_provider)
+        orchestrator.process_turn(
+            self.principal, make_request("A separate question", conversation_id),
+        )
+        memory_after = get_conversation_memory(self.principal, conversation_id)
+        self.assertEqual(len(second_provider.requests), 1)
+        self.assertEqual(memory_after["through_sequence"], memory_before["through_sequence"])
 
     def test_two_consecutive_questions_use_their_correct_context_once(self):
         provider = MockLLMProvider([
@@ -576,43 +1234,38 @@ class LLMOrchestrationTests(unittest.TestCase):
         self.assertEqual(tool_result["tool_call_id"], "transactions-call-1")
         self.assertEqual(tool_result["name"], "get_recent_transactions")
 
-    def test_groq_runs_multiple_tool_calls_in_sequential_rounds(self):
+    def test_groq_simple_spending_request_selects_only_summary_tool(self):
         client, api = mock_groq_client([
             groq_response(tool_calls=[groq_tool_call("summary-1", "get_spending_summary", "{}")]),
-            groq_response(tool_calls=[groq_tool_call("category-1", "get_category_breakdown", "{}")]),
-            groq_response(tool_calls=[groq_tool_call("merchant-1", "get_top_merchants", "{}")]),
             groq_response("Your spending summary is ready."),
         ])
         provider = GroqLLMProvider("offline-key", "openai/gpt-oss-20b", client=client)
         orchestrator = AssistantOrchestrator(llm_provider=provider)
-        with patch("services.assistant_service.execute_tool", side_effect=[
-            {"total_debits": 100}, [{"category": "Food", "amount": 40}],
-            [{"merchant": "Demo Shop", "total_spent": 40}],
-        ]) as execute:
+        with patch("services.assistant_service.execute_tool", return_value={"total_debits": 100}) as execute:
             result = orchestrator.process_turn(self.principal, make_request("List my spending"))
 
-        self.assertEqual(execute.call_count, 3)
-        self.assertEqual([entry.tool_name for entry in result.tool_results], [
-            "get_spending_summary", "get_category_breakdown", "get_top_merchants",
-        ])
-        self.assertEqual(len(api.requests), 4)
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual([entry.tool_name for entry in result.tool_results], ["get_spending_summary"])
+        self.assertEqual(len(api.requests), 2)
         self.assertTrue(all(request["parallel_tool_calls"] is False for request in api.requests))
-        self.assertEqual(api.requests[0]["tool_choice"], "required")
+        self.assertEqual(api.requests[0]["tool_choice"], {
+            "type": "function", "function": {"name": "get_spending_summary"},
+        })
         self.assertEqual(
             {item["function"]["name"] for item in api.requests[0]["tools"]},
-            {"get_spending_summary", "get_category_breakdown", "get_top_merchants"},
+            {"get_spending_summary"},
         )
 
-        for index, call_id in enumerate(("summary-1", "category-1", "merchant-1")):
-            messages = api.requests[index + 1]["messages"]
-            assistant_call = next(item for item in messages if any(
-                call["id"] == call_id for call in item.get("tool_calls", [])
-            ))
-            tool_result = next(item for item in messages if item.get("tool_call_id") == call_id)
-            call = next(call for call in assistant_call["tool_calls"] if call["id"] == call_id)
-            self.assertEqual(tool_result["name"], call["function"]["name"])
+        self.assertIn("Total debits: ₹100.00", result.assistant_text)
+        messages = api.requests[1]["messages"]
+        assistant_call = next(item for item in messages if any(
+            call["id"] == "summary-1" for call in item.get("tool_calls", [])
+        ))
+        tool_result = next(item for item in messages if item.get("tool_call_id") == "summary-1")
+        call = next(call for call in assistant_call["tool_calls"] if call["id"] == "summary-1")
+        self.assertEqual(tool_result["name"], call["function"]["name"])
 
-    def test_five_required_sequential_tools_get_a_final_answer_round(self):
+    def test_five_required_read_tools_execute_and_render_in_one_validated_plan(self):
         names = (
             "get_card_details", "get_loan_details", "get_recent_transactions",
             "get_spending_summary", "get_category_breakdown",
@@ -623,15 +1276,22 @@ class LLMOrchestrationTests(unittest.TestCase):
         ] + [LLMResponse(text="I checked all five requested sources.")]
         provider = MockLLMProvider(replies)
         orchestrator = AssistantOrchestrator(llm_provider=provider)
+        outputs = {
+            "get_card_details": [{"card_type": "DEBIT", "status": "ACTIVE"}],
+            "get_loan_details": [{"loan_type": "DEMO", "status": "ACTIVE"}],
+            "get_recent_transactions": [{"merchant": "Shop", "amount": 10}],
+            "get_spending_summary": {"total_spent": 10},
+            "get_category_breakdown": [{"category": "FOOD", "amount": 10}],
+        }
         with patch("services.assistant_service._required_tools_for_question", return_value=frozenset(names)), \
-             patch("services.assistant_service.execute_tool", side_effect=[{}, {}, {}, [], {}]) as execute:
+             patch("services.assistant_service.execute_tool", side_effect=lambda name, _principal, _arguments: outputs[name]) as execute:
             response = orchestrator.process_turn(self.principal, make_request("Please check five things"))
 
         self.assertEqual(execute.call_count, 5)
-        self.assertEqual(len(provider.requests), 6)
-        self.assertEqual(response.assistant_text, "I checked all five requested sources.")
-        self.assertEqual([item.tool_name for item in response.tool_results], list(names))
-        self.assertEqual(provider.requests[-1][3], frozenset())
+        self.assertEqual(provider.requests, [])
+        self.assertEqual({item.tool_name for item in response.tool_results}, set(names))
+        for section in ("Cards:", "Loans:", "Recent transactions:", "Spending summary:", "Spending by category:"):
+            self.assertIn(section, response.assistant_text)
 
     def test_complex_financial_overview_routes_and_collects_all_requested_sources(self):
         question = (
@@ -690,9 +1350,14 @@ class LLMOrchestrationTests(unittest.TestCase):
 
         self.assertEqual(tool_execution.call_count, len(expected))
         self.assertEqual({item.tool_name for item in response.tool_results}, expected)
-        self.assertEqual(len(provider.requests), len(expected) + 1)
-        self.assertEqual(provider.requests[-1][1], ())
-        self.assertIn("October credits were INR 2,000", response.assistant_text)
+        self.assertEqual(provider.requests, [])
+        for section in (
+            "Account balance:", "Monthly transactions:", "Large transactions:",
+            "Spending by category:", "Monthly spending comparison:",
+            "Unusual spending:", "Savings analysis:", "Cards:", "Loans:",
+        ):
+            self.assertIn(section, response.assistant_text)
+        self.assertIn("Successful credits: ₹2,000.00", response.assistant_text)
 
     def test_tts_receives_speech_friendly_copy_while_visual_text_is_preserved(self):
         visual = "## Summary\n\n| Month | Debits |\n|---|---:|\n| October | INR 2,000 |\nUpdated 2026-10-31T12:00:00Z"
@@ -893,6 +1558,181 @@ class LLMOrchestrationTests(unittest.TestCase):
         self.assertLess(names.index("tool_call_requested"), names.index("tool_execution_completed"))
         self.assertLess(names.index("tool_execution_completed"), names.index("tool_result_handed_back"))
         self.assertLess(names.index("tool_result_handed_back"), names.index("final_response_generated"))
+        timings = [event for event in events if event["event"] == "assistant_stage_timing"]
+        stages = {event.get("stage") for event in timings}
+        self.assertTrue({
+            "request_setup_and_persistence", "intent_classification", "tool_selection",
+            "tool_and_database", "llm_generation", "response_formatting",
+            "response_persistence",
+        }.issubset(stages))
+        self.assertTrue(all(
+            isinstance(event.get("duration_ms"), (int, float))
+            and event["duration_ms"] >= 0 for event in timings
+        ))
+        total_event = next(event for event in events if event["event"] == "turn_completed")
+        self.assertGreaterEqual(total_event["duration_ms"], 0)
+
+    def test_timing_trace_is_emitted_for_tool_and_provider_failures_without_sensitive_data(self):
+        secret = "987654321012 TR-" + "A" * 48 + " provider-private-detail"
+        tool_provider = MockLLMProvider([
+            LLMResponse(tool_calls=(LLMToolCall("get_account_balance", {}, "timed-tool"),)),
+            LLMResponse(text="The balance is unavailable."),
+        ])
+        with patch("services.assistant_service.execute_tool", side_effect=RuntimeError(secret)):
+            with self.assertLogs("services.assistant_service", level="INFO") as captured:
+                with self.assertRaises(AssistantServiceError):
+                    AssistantOrchestrator(llm_provider=tool_provider).process_turn(
+                        self.principal, make_request("What is my account balance?"),
+                    )
+        events = [
+            json.loads(line.split("assistant_execution_trace ", 1)[1])
+            for line in captured.output if "assistant_execution_trace " in line
+        ]
+        timings = [event for event in events if event["event"] == "assistant_stage_timing"]
+        self.assertTrue(any(event.get("stage") == "tool_and_database" and event.get("tool") == "get_account_balance" for event in timings))
+        self.assertTrue(any(event.get("stage") == "llm_generation" and event.get("step") == 1 for event in timings))
+        self.assertTrue(any(event["event"] == "turn_failed" and "duration_ms" in event for event in events))
+        self.assertNotIn(secret, "\n".join(captured.output))
+
+        provider = MockLLMProvider([LLMProviderError(secret)])
+        with self.assertLogs("services.assistant_service", level="INFO") as captured:
+            with self.assertRaises(AssistantServiceError):
+                AssistantOrchestrator(llm_provider=provider).process_turn(
+                    self.principal, make_request("Hello, can you help?"),
+                )
+        events = [
+            json.loads(line.split("assistant_execution_trace ", 1)[1])
+            for line in captured.output if "assistant_execution_trace " in line
+        ]
+        self.assertTrue(any(
+            event.get("stage") == "llm_generation" and "duration_ms" in event
+            for event in events if event["event"] == "assistant_stage_timing"
+        ))
+        self.assertTrue(any(event["event"] == "turn_failed" for event in events))
+        self.assertNotIn(secret, "\n".join(captured.output))
+
+        class FailingSynthesizer:
+            def synthesize(self, *_args):
+                raise RuntimeError(secret)
+
+        speech_request = make_request("Give me a short summary.")
+        speech_request = speech_request.model_copy(update={"output_mode": "speech"})
+        with self.assertLogs("services.assistant_service", level="INFO") as captured:
+            response = AssistantOrchestrator(
+                llm_provider=MockLLMProvider([LLMResponse(text="A short summary.")]),
+                synthesizer=FailingSynthesizer(),
+            ).process_turn(self.principal, speech_request)
+        events = [
+            json.loads(line.split("assistant_execution_trace ", 1)[1])
+            for line in captured.output if "assistant_execution_trace " in line
+        ]
+        self.assertTrue(any(
+            event.get("stage") == "tts" and "duration_ms" in event
+            for event in events if event["event"] == "assistant_stage_timing"
+        ))
+        self.assertIsNone(response.speech_output)
+        self.assertNotIn(secret, "\n".join(captured.output))
+
+    def test_deterministic_latency_baseline_for_representative_read_scenarios(self):
+        """Print a local mock-backed baseline; values are not production latency."""
+        scenarios = {
+            "balance": ("What is my account balance?", "get_account_balance"),
+            "transactions": ("Show my last five transactions", "get_recent_transactions"),
+            "loans": ("Show my loan details", "get_loan_details"),
+            "multi_balance_transactions_loans": (
+                "Show my balance, last five transactions and loans", None,
+            ),
+            "contextual_follow_up": ("And what about it?", "get_account_balance"),
+        }
+        summaries = {}
+        sample_count = 24
+
+        def trace_for(operation):
+            with self.assertLogs("services.assistant_service", level="INFO") as captured:
+                operation()
+            return [
+                json.loads(line.split("assistant_execution_trace ", 1)[1])
+                for line in captured.output if "assistant_execution_trace " in line
+            ]
+
+        for scenario, (question, tool_name) in scenarios.items():
+            wall_samples = []
+            stage_samples = {}
+            cold_stages = None
+            llm_round_durations = []
+            llm_round_counts = []
+            for sample in range(sample_count):
+                if scenario == "contextual_follow_up":
+                    seed_provider = MockLLMProvider([
+                        LLMResponse(tool_calls=(LLMToolCall("get_account_balance", {}, "seed-call"),)),
+                        LLMResponse(text="Your current balance is recorded."),
+                    ])
+                    with patch("services.assistant_service.execute_tool", return_value=[]):
+                        seed = AssistantOrchestrator(llm_provider=seed_provider).process_turn(
+                            self.principal, make_request("What is my account balance?"),
+                        )
+                    follow_up_id = seed.conversation_id
+                    provider = MockLLMProvider([
+                        LLMResponse(tool_calls=(LLMToolCall("get_account_balance", {}, "follow-up-call"),)),
+                        LLMResponse(text="I checked that for your account."),
+                    ])
+                    request = make_request(question, follow_up_id)
+                else:
+                    provider = MockLLMProvider(
+                        [
+                            LLMResponse(tool_calls=(LLMToolCall(tool_name, {}, "profile-call"),)),
+                            LLMResponse(text="The requested information was retrieved."),
+                        ] if tool_name else []
+                    )
+                    request = make_request(question)
+
+                def invoke():
+                    with patch("services.assistant_service.execute_tool", return_value=[]):
+                        return AssistantOrchestrator(llm_provider=provider).process_turn(
+                            self.principal, request,
+                        )
+
+                started = time.perf_counter()
+                try:
+                    events = trace_for(invoke)
+                except Exception as exc:
+                    raise AssertionError(f"Mock baseline failed for {scenario}, sample {sample + 1}") from exc
+                wall_ms = (time.perf_counter() - started) * 1000
+                wall_samples.append(wall_ms)
+                stages = {}
+                for event in events:
+                    if event.get("event") == "assistant_stage_timing":
+                        stage = event.get("stage")
+                        stages.setdefault(stage, []).append(event.get("duration_ms", 0))
+                        if stage == "llm_generation":
+                            llm_round_durations.append(event.get("duration_ms", 0))
+                        if stage == "tool_and_database":
+                            stages.setdefault(f"tool:{event.get('tool')}", []).append(event.get("duration_ms", 0))
+                llm_round_counts.append(len(stages.get("llm_generation", [])))
+                if sample == 0:
+                    cold_stages = {key: sum(values) for key, values in stages.items()}
+                for key, values in stages.items():
+                    stage_samples.setdefault(key, []).append(sum(values))
+
+            def percentile(values, fraction):
+                ordered = sorted(values)
+                return round(ordered[max(0, math.ceil(fraction * len(ordered)) - 1)], 2)
+
+            summaries[scenario] = {
+                "samples": sample_count,
+                "first_request_ms": round(wall_samples[0], 2),
+                "warm_median_ms": round(statistics.median(wall_samples[1:]), 2),
+                "warm_p95_ms": percentile(wall_samples[1:], 0.95),
+                "llm_rounds_per_request": sorted(set(llm_round_counts)),
+                "llm_round_duration_median_ms": round(statistics.median(llm_round_durations), 2) if llm_round_durations else None,
+                "llm_round_duration_p95_ms": percentile(llm_round_durations, 0.95) if llm_round_durations else None,
+                "cold_stage_ms": cold_stages,
+                "warm_stage_medians_ms": {
+                    key: round(statistics.median(values[1:]), 2)
+                    for key, values in stage_samples.items()
+                },
+            }
+        print("DETERMINISTIC_MOCK_LATENCY_BASELINE=" + json.dumps(summaries, sort_keys=True))
 
     def _assert_trace_sequence(self, lines):
         events = [json.loads(line.split("assistant_execution_trace ", 1)[1]) for line in lines if "assistant_execution_trace " in line]
@@ -1301,16 +2141,23 @@ class LLMOrchestrationTests(unittest.TestCase):
                 provider = MockLLMProvider([LLMResponse(tool_calls=(
                     LLMToolCall(sorted(expected)[0], {}, "banking-data-call"),
                 ))])
-                try:
-                    AssistantOrchestrator(llm_provider=provider).process_turn(
+                if len(expected) > 1:
+                    result = AssistantOrchestrator(llm_provider=provider).process_turn(
                         self.principal, make_request(question),
                     )
-                except Exception:
-                    # The mock may not complete a multi-tool turn; the first request
-                    # still proves that only server-selected schemas are exposed.
-                    pass
-                selected = {tool.name for tool in provider.requests[0][1]}
-                self.assertEqual(selected, expected)
+                    self.assertEqual(provider.requests, [])
+                    self.assertEqual({item.tool_name for item in result.tool_results}, expected)
+                else:
+                    try:
+                        AssistantOrchestrator(llm_provider=provider).process_turn(
+                            self.principal, make_request(question),
+                        )
+                    except Exception:
+                        # The provider fixture only needs to reach its initial
+                        # constrained request; the selected schema is the assertion.
+                        pass
+                    selected = {tool.name for tool in provider.requests[0][1]}
+                    self.assertEqual(selected, expected)
 
     def test_card_and_loan_tools_return_owner_service_results_without_model_ids(self):
         cases = (

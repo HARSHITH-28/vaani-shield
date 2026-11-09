@@ -3,6 +3,7 @@
 import unittest
 from unittest.mock import Mock
 import requests
+from requests.cookies import RequestsCookieJar
 
 from frontend.api_client import (
     APIError,
@@ -11,6 +12,10 @@ from frontend.api_client import (
     build_text_turn_request,
 )
 from frontend.pages.banking import load_dashboard_context
+from frontend.pages.scam_detection import (
+    _pairing_error_message,
+    _render_android_sms_pairing,
+)
 
 
 class APIClientTests(unittest.TestCase):
@@ -145,6 +150,76 @@ class APIClientTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in self.session.request.call_args_list], ["POST", "GET", "DELETE"])
         self.assertIn("/api/v1/auth/demo/session", self.session.request.call_args_list[0].args[1])
 
+    def test_android_pairing_code_uses_existing_authenticated_session(self):
+        payload = {
+            "pairing_code": "TESTCODE",
+            "expires_at": "2026-11-07T12:05:00+00:00",
+            "expires_in_seconds": 300,
+        }
+        self.session.cookies = RequestsCookieJar()
+        self.session.cookies.set("vaanishield_demo_session", "mock-session-cookie")
+        self.session.request.return_value = self.response(201, payload)
+
+        result = self.api.create_android_sms_pairing_code()
+
+        self.assertEqual(result, payload)
+        self.assertIs(self.api.session, self.session)
+        call = self.session.request.call_args
+        self.assertEqual(call.args[0], "POST")
+        self.assertEqual(
+            call.args[1],
+            "http://localhost:8000/api/v1/me/scam/devices/pair-token",
+        )
+        self.assertNotIn("json", call.kwargs)
+        self.assertNotIn("headers", call.kwargs)
+        self.assertNotIn("customer_key", str(call.kwargs))
+        self.assertNotIn("customer_id", str(call.kwargs))
+
+    def test_android_pairing_api_errors_and_display_messages_are_safe(self):
+        for status, safe_message in (
+            (401, "Your demo session has expired"),
+            (429, "Too many pairing-code requests"),
+            (503, "A pairing code could not be generated"),
+        ):
+            self.session.request.return_value = self.response(
+                status, {"detail": "mock-session-cookie internal detail"},
+            )
+            with self.subTest(status=status), self.assertRaises(APIError) as caught:
+                self.api.create_android_sms_pairing_code()
+            self.assertEqual(caught.exception.status_code, status)
+            displayed = _pairing_error_message(caught.exception.status_code)
+            self.assertIn(safe_message, displayed)
+            self.assertNotIn("mock-session-cookie", displayed)
+            self.assertNotIn("internal detail", displayed)
+
+    def test_android_pairing_ui_displays_only_pairing_details(self):
+        class FakeStreamlit:
+            def __init__(self):
+                self.output = []
+
+            def button(self, *_args, **_kwargs):
+                return True
+
+            def __getattr__(self, name):
+                return lambda *args, **_kwargs: self.output.append((name, args))
+
+        fake_st = FakeStreamlit()
+        fake_api = Mock()
+        fake_api.create_android_sms_pairing_code.return_value = {
+            "pairing_code": "TESTCODE",
+            "expires_at": "2099-01-01T00:05:00+00:00",
+        }
+        state = {"customer": {"customer_key": "demo-arjun"}}
+
+        _render_android_sms_pairing(fake_st, fake_api, state)
+
+        fake_api.create_android_sms_pairing_code.assert_called_once_with()
+        rendered = repr(fake_st.output)
+        self.assertIn("TESTCODE", rendered)
+        self.assertNotIn("mock-session-cookie", rendered)
+        self.assertNotIn("device_token", rendered)
+        self.assertNotIn("customer_key", rendered)
+
     def test_dashboard_methods_use_self_service_paths_without_customer_references(self):
         self.session.request.return_value = self.response(200, [])
         self.api.get_my_context()
@@ -244,6 +319,50 @@ class APIClientTests(unittest.TestCase):
         self.assertEqual(calls[-3].kwargs["params"], {"limit": 15})
         self.assertEqual(calls[-2].args[1], "http://localhost:8000/api/v1/me/notifications/n1/read")
         self.assertEqual(calls[-1].args[1], "http://localhost:8000/api/v1/me/notifications/read-all")
+
+    def test_analysis_report_methods_use_authenticated_session_and_cursor_filters(self):
+        self.session.request.return_value = self.response(200, {"items": [], "next_cursor": "next", "has_more": True})
+        result = self.api.list_scam_reports(
+            limit=25, cursor="cursor-1", source_type="INCOMING_SMS",
+            risk_level="HIGH", date_from="2026-01-01", date_to="2026-01-31",
+            search="bank",
+        )
+        self.assertEqual(result["next_cursor"], "next")
+        call = self.session.request.call_args
+        self.assertEqual(call.args[0], "GET")
+        self.assertEqual(call.args[1], "http://localhost:8000/api/v1/me/scam/reports")
+        self.assertEqual(call.kwargs["params"], {
+            "limit": 25, "cursor": "cursor-1", "source_type": "INCOMING_SMS",
+            "risk_level": "HIGH", "from": "2026-01-01", "to": "2026-01-31", "search": "bank",
+        })
+        self.api.get_scam_report("incoming_sms", "123e4567-e89b-42d3-a456-426614174000")
+        self.assertEqual(
+            self.session.request.call_args.args[1],
+            "http://localhost:8000/api/v1/me/scam/reports/INCOMING_SMS/123e4567-e89b-42d3-a456-426614174000",
+        )
+
+    def test_analysis_report_client_rejects_malformed_identifiers_and_filters(self):
+        with self.assertRaises(ValueError):
+            self.api.get_scam_report("INCOMING_SMS", "not-a-uuid")
+        with self.assertRaises(ValueError):
+            self.api.get_scam_report("UNKNOWN", "123e4567-e89b-42d3-a456-426614174000")
+        with self.assertRaises(ValueError):
+            self.api.list_scam_reports(limit=0)
+
+    def test_analysis_report_authentication_and_backend_errors_are_preserved_safely(self):
+        from frontend.pages.scam_detection import _analysis_reports_error_text
+        for status in (401, 404, 503):
+            self.session.request.return_value = self.response(
+                status, {"detail": "private session or database detail"},
+            )
+            with self.subTest(status=status), self.assertRaises(APIError) as caught:
+                self.api.get_scam_report(
+                    "INCOMING_SMS", "123e4567-e89b-42d3-a456-426614174000",
+                )
+            self.assertEqual(caught.exception.status_code, status)
+            safe = _analysis_reports_error_text(status)
+            self.assertNotIn("private session", safe)
+            self.assertNotIn("database detail", safe)
 
 
 if __name__ == "__main__":

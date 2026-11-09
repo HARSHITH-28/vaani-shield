@@ -11,6 +11,7 @@ from frontend.components.conversation import (
     submit_support_confirmation,
     submit_support_closure,
     _run_support_confirmation,
+    _render_support_action,
 )
 from frontend.pages.customer_support import (
     build_ticket_request,
@@ -141,6 +142,38 @@ class FakeSupportAPI:
 
 
 class CustomerSupportFrontendTests(unittest.TestCase):
+    def test_executed_proposal_shows_submitted_state_and_valid_destination(self):
+        ticket_ref = "VS-" + "8" * 32
+        pending = {
+            "confirmation_id": "confirm-submitted",
+            "conversation_id": "conversation-1",
+            "expires_at": "2099-01-01T00:00:00+00:00",
+            "action": {
+                "action_type": "create_support_ticket", "category": "card",
+                "subject": "Card issue", "priority": "HIGH",
+                "description": "Cannot use card",
+            },
+        }
+        message = {"conversation_id": "conversation-1", "pending_action": pending}
+        state = {
+            "conversation_id": "conversation-1",
+            "support_action_outcomes": {
+                "create:confirm-submitted": {
+                    "status": "executed",
+                    "action_result": {"data": {"ticket_ref": ticket_ref}},
+                },
+            },
+        }
+        st = FakeStreamlit(clicked=f"view-ticket-submitted-{ticket_ref}")
+
+        _render_support_action(st, message, FakeSupportAPI(), state)
+
+        self.assertFalse(any("not been submitted" in str(item) for item in st.warnings))
+        self.assertIsNone(message["pending_action"])
+        self.assertEqual(message["support_submitted_ticket_ref"], ticket_ref)
+        self.assertEqual(state["pending_navigation"]["subfeature"], "Track Complaints")
+        self.assertEqual(state["support_selected_ticket_ref"], ticket_ref)
+
     def test_support_page_loads_with_empty_state_and_api_filters(self):
         st = FakeStreamlit()
         api = FakeSupportAPI()

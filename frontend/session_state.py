@@ -8,6 +8,12 @@ from frontend.api_client import VaaniShieldAPI
 
 RESPONSE_LANGUAGE_OPTIONS_FULL = ["Automatic", "English", "Kannada", "Hindi"]
 RESPONSE_LANGUAGE_OPTIONS_SHORT = ["Auto", "English", "Kannada", "Hindi"]
+RESPONSE_MODE_LABELS = {
+    "text": "Text",
+    "speech": "Speech",
+    "speech_and_text": "Speech + Text",
+}
+RESPONSE_MODE_CODES = {label: code for code, label in RESPONSE_MODE_LABELS.items()}
 
 CODE_TO_FULL_LABEL = {
     None: "Automatic",
@@ -63,6 +69,10 @@ DEFAULTS = {
     "audio_cache": {},
     "audio_playback_visible": {},
     "response_mode": "text",
+    "response_mode_explicit": False,
+    "dock_response_mode_selector": "Text",
+    "assistant_response_mode": "Text",
+    "composer_menu_epoch": 0,
     "language_hint": "auto",
     "language_display": "Automatic",
     "response_language": None,
@@ -133,6 +143,14 @@ def initialize_session_state(state, api_factory=VaaniShieldAPI):
             state[key] = value.copy() if isinstance(value, (dict, list)) else value
 
     # Ensure widget selector keys align with canonical response_language
+    if state.get("response_mode") not in RESPONSE_MODE_LABELS:
+        state["response_mode"] = "text"
+    expected_mode = RESPONSE_MODE_LABELS[state["response_mode"]]
+    if state.get("dock_response_mode_selector") not in RESPONSE_MODE_CODES:
+        state["dock_response_mode_selector"] = expected_mode
+    if state.get("assistant_response_mode") not in RESPONSE_MODE_CODES:
+        state["assistant_response_mode"] = expected_mode
+
     canon = state.get("response_language")
     if canon in CODE_TO_FULL_LABEL:
         expected_full = CODE_TO_FULL_LABEL[canon]
@@ -313,4 +331,31 @@ def sync_response_language(state, language_code: str | None):
                 pass
             else:
                 raise
+
+
+def _sync_response_mode(selected, source_key):
+    code = RESPONSE_MODE_CODES.get(selected, "text")
+    st.session_state["response_mode"] = code
+    st.session_state["response_mode_explicit"] = True
+    for key in ("dock_response_mode_selector", "assistant_response_mode"):
+        if key == source_key:
+            continue
+        try:
+            st.session_state[key] = RESPONSE_MODE_LABELS[code]
+        except StreamlitWidgetAlreadyInstantiatedError:
+            pass
+
+
+def on_dock_response_mode_change():
+    _sync_response_mode(
+        st.session_state.get("dock_response_mode_selector", "Text"),
+        "dock_response_mode_selector",
+    )
+
+
+def on_assistant_response_mode_change():
+    _sync_response_mode(
+        st.session_state.get("assistant_response_mode", "Text"),
+        "assistant_response_mode",
+    )
 

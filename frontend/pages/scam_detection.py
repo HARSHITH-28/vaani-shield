@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+from copy import deepcopy
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from frontend.api_client import APIError
@@ -20,6 +23,17 @@ _TRANSACTION_REF = re.compile(r"^TR-[A-F0-9]{48}$")
 _TRANSACTION_PAGE_SIZE = 10
 _TRANSACTION_API_LIMIT = 100
 _ASSESSMENT_PAGE_SIZE = 10
+_REPORT_PAGE_SIZE = 25
+_REPORT_SOURCES = {
+    "All sources": None,
+    "Manual Message": "MANUAL_MESSAGE",
+    "Incoming SMS": "INCOMING_SMS",
+    "Voice Call": "VOICE_CALL",
+}
+_REPORT_RISKS = {
+    "All risks": None, "Critical": "CRITICAL", "High": "HIGH",
+    "Medium": "MEDIUM", "Low": "LOW", "Unknown": "UNKNOWN",
+}
 _TRANSACTION_RISK_STATE_KEYS = (
     "transaction_risk_transactions", "transaction_risk_tx_page",
     "transaction_risk_selected_ref", "transaction_risk_latest_result",
@@ -177,6 +191,34 @@ def _start_new_assessment(state):
     state["scam_assessment_error"] = None
 
 
+def _invalidate_analysis_reports(state):
+    """Refresh cached historical reports after creating a new assessment."""
+    state["analysis_reports_cache_key"] = None
+    state["analysis_reports_items"] = None
+    state["analysis_reports_cursor"] = None
+    state["analysis_reports_has_more"] = False
+    state["analysis_reports_detail"] = None
+    state["analysis_reports_detail_key"] = None
+
+
+def assess_message(api, state, message_text):
+    """Create and display the exact result returned for this text submission."""
+    if not isinstance(message_text, str) or not message_text.strip():
+        raise ValueError("Paste the message text first.")
+    _start_new_assessment(state)
+    assessment = api.assess_scam_message(
+        message_text.strip(), state.get("language_hint", "auto"),
+    )
+    if not isinstance(assessment, dict) or not assessment.get("assessment_id"):
+        raise ValueError("The assessment service returned an incomplete report.")
+    # The response is a per-request JSON object. Copy its top-level envelope so
+    # UI state cannot alias a fake/provider-owned response object across turns.
+    state["latest_scam_assessment"] = deepcopy(assessment)
+    state["scam_assessment_error"] = None
+    _invalidate_analysis_reports(state)
+    return state["latest_scam_assessment"]
+
+
 def assess_voice_recording(api, state, filename, content, media_type):
     """Upload once, then let the call-assessment route consume that upload."""
     if not content:
@@ -186,7 +228,8 @@ def assess_voice_recording(api, state, filename, content, media_type):
     assessment = api.assess_scam_call(
         upload["audio_upload_id"], state.get("language_hint", "auto"),
     )
-    state["latest_scam_assessment"] = assessment
+    state["latest_scam_assessment"] = deepcopy(assessment)
+    _invalidate_analysis_reports(state)
     return assessment
 
 
@@ -227,18 +270,80 @@ def _handle_error(st, state, exc):
     st.error(messages.get(exc.status_code, "The assessment could not be completed."))
 
 
+def _pairing_error_message(status_code):
+    """Return safe, user-facing pairing errors without backend/session details."""
+    messages = {
+        0: "The VaaniShield API could not be reached. Check the connection and try again.",
+        401: "Your demo session has expired. Sign in again to generate a pairing code.",
+        429: "Too many pairing-code requests. Please wait a few minutes and try again.",
+    }
+    return messages.get(status_code, "A pairing code could not be generated. Please try again.")
+
+
+def _render_android_sms_pairing(st, api, state):
+    """Render pairing controls; ownership is always resolved from the API session."""
+    st.subheader("Android SMS Companion")
+    st.caption(
+        "Generate a short-lived code, then enter it in the VaaniShield Android companion. "
+        "The code is tied to the customer signed in to this session."
+    )
+
+    customer_key = (state.get("customer") or {}).get("customer_key")
+    if state.get("android_sms_pairing_customer_key") != customer_key:
+        state.pop("android_sms_pairing", None)
+        state["android_sms_pairing_customer_key"] = customer_key
+
+    if st.button("Generate Pairing Code", key="android-sms-generate-pairing-code"):
+        try:
+            result = api.create_android_sms_pairing_code()
+            code = result.get("pairing_code") if isinstance(result, dict) else None
+            expires_at = result.get("expires_at") if isinstance(result, dict) else None
+            if not isinstance(code, str) or not code or not isinstance(expires_at, str):
+                st.error("The server returned an incomplete pairing response. Please try again.")
+            else:
+                state["android_sms_pairing"] = {
+                    "pairing_code": code,
+                    "expires_at": expires_at,
+                }
+        except APIError as exc:
+            message = _pairing_error_message(exc.status_code)
+            if exc.status_code == 401:
+                sign_out(state)
+                st.warning(message)
+                st.rerun()
+            st.error(message)
+
+    pairing = state.get("android_sms_pairing")
+    if not isinstance(pairing, dict):
+        return
+
+    st.markdown("**Enter this code in the Android companion**")
+    st.code(pairing["pairing_code"], language=None)
+    try:
+        expires = datetime.fromisoformat(pairing["expires_at"].replace("Z", "+00:00"))
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        remaining = max(0, int((expires - datetime.now(timezone.utc)).total_seconds()))
+        expiry_text = expires.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        if remaining:
+            countdown = f"{remaining // 60}m {remaining % 60}s remaining"
+            st.caption(f"Expires at {expiry_text} · {countdown} (updates when the page reruns).")
+        else:
+            st.warning(f"This code expired at {expiry_text}. Generate a new code to pair a device.")
+    except (TypeError, ValueError, OverflowError):
+        st.caption("The server supplied an expiry time that could not be displayed.")
+
+
 def _render_message_analysis(st, api, state):
     st.caption("Paste a suspicious SMS, email, or chat message. Never include an OTP, PIN, or password.")
     message = st.text_area("Message to assess", key="scam-message-input", max_chars=12000)
     if st.button("Analyze message", key="analyze-scam-message", type="primary"):
-        _start_new_assessment(state)
         if not message or not message.strip():
+            _start_new_assessment(state)
             st.warning("Paste the message text first.")
         else:
             try:
-                state["latest_scam_assessment"] = api.assess_scam_message(
-                    message.strip(), state.get("language_hint", "auto"),
-                )
+                assess_message(api, state, message)
             except APIError as exc:
                 state["scam_assessment_error"] = "The message could not be assessed. Please try again."
                 _handle_error(st, state, exc)
@@ -705,6 +810,313 @@ def _available_investigation_evidence(state):
     return choices
 
 
+def sms_report_id_from_notification(notification):
+    """Extract a strictly validated SMS event reference from a notification hint."""
+    if not isinstance(notification, dict):
+        return None
+    event_ref = notification.get("event_ref")
+    candidates = []
+    if isinstance(event_ref, str) and event_ref.startswith("sms-threat-"):
+        candidates.append(event_ref[len("sms-threat-"):])
+    metadata = notification.get("metadata")
+    if not isinstance(metadata, dict):
+        raw = notification.get("metadata_json")
+        try:
+            metadata = json.loads(raw) if isinstance(raw, str) else {}
+        except (ValueError, TypeError):
+            metadata = {}
+    if isinstance(metadata, dict) and metadata.get("source") == "android_sms_threat_intelligence":
+        candidates.append(metadata.get("sms_event_id"))
+    for candidate in candidates:
+        try:
+            return str(UUID(str(candidate)))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return None
+
+
+def queue_sms_report_navigation(state, notification):
+    """Stage report navigation; API detail fetch still enforces customer ownership."""
+    report_id = sms_report_id_from_notification(notification)
+    if report_id is None:
+        return False
+    from frontend.navigation import request_navigation
+    state["analysis_reports_pending_detail"] = {
+        "source_type": "INCOMING_SMS", "report_id": report_id,
+    }
+    request_navigation(state, "Scam Detection", "Analysis Reports")
+    return True
+
+
+def _report_filter_key(state):
+    filters = state.get("analysis_reports_filters") or {}
+    return (
+        filters.get("source_type"), filters.get("risk_level"),
+        filters.get("date_from"), filters.get("date_to"),
+        (filters.get("search") or "").strip().casefold(),
+    )
+
+
+def load_analysis_reports(api, state, *, append=False):
+    """Load one backend cursor page and cache it for the active customer/filters."""
+    customer_key = (state.get("customer") or {}).get("customer_key")
+    key = (customer_key, *_report_filter_key(state))
+    if state.get("analysis_reports_cache_key") != key:
+        state["analysis_reports_items"] = None
+        state["analysis_reports_cursor"] = None
+        state["analysis_reports_has_more"] = False
+        state["analysis_reports_detail"] = None
+        state["analysis_reports_detail_key"] = None
+        state["analysis_reports_cache_key"] = key
+    cursor = state.get("analysis_reports_cursor") if append else None
+    filters = state.get("analysis_reports_filters") or {}
+    page = api.list_scam_reports(
+        limit=_REPORT_PAGE_SIZE, cursor=cursor,
+        source_type=filters.get("source_type"), risk_level=filters.get("risk_level"),
+        date_from=filters.get("date_from"), date_to=filters.get("date_to"),
+        search=(filters.get("search") or "").strip() or None,
+    )
+    incoming = page.get("items", []) if isinstance(page, dict) else []
+    if not isinstance(incoming, list):
+        incoming = []
+    if append:
+        existing = state.get("analysis_reports_items") or []
+        seen = {str(item.get("report_id")) for item in existing if isinstance(item, dict)}
+        incoming = [item for item in incoming if isinstance(item, dict) and str(item.get("report_id")) not in seen]
+        state["analysis_reports_items"] = existing + incoming
+    else:
+        state["analysis_reports_items"] = incoming
+    state["analysis_reports_cursor"] = page.get("next_cursor") if isinstance(page, dict) else None
+    state["analysis_reports_has_more"] = bool(page.get("has_more")) if isinstance(page, dict) else False
+    state["analysis_reports_error"] = None
+    return state["analysis_reports_items"]
+
+
+def open_analysis_report(api, state, source_type, report_id):
+    detail = api.get_scam_report(source_type, report_id)
+    state["analysis_reports_detail"] = detail
+    state["analysis_reports_detail_key"] = (source_type, str(report_id))
+    state["analysis_reports_detail_error"] = None
+    return detail
+
+
+def report_content_notice(detail):
+    source = detail.get("source_type") if isinstance(detail, dict) else None
+    availability = detail.get("content_availability") if isinstance(detail, dict) else None
+    if source == "MANUAL_MESSAGE":
+        return "The original message content is unavailable. Message text is not retained in analysis reports."
+    if source == "VOICE_CALL" and availability == "TRANSCRIPT_EXPIRED":
+        return "This redacted transcript expired after 30 days and is no longer available. The analysis report remains available."
+    if source == "VOICE_CALL" and availability != "REDACTED_TRANSCRIPT":
+        return "The historical call transcript is unavailable. It was not retained for this report."
+    return None
+
+
+def _analysis_reports_error(st, state, exc, *, detail=False):
+    if exc.status_code == 401:
+        sign_out(state)
+        st.warning("Your demo session expired. Sign in again to view analysis reports.")
+        st.rerun()
+    message = _analysis_reports_error_text(exc.status_code)
+    state["analysis_reports_detail_error" if detail else "analysis_reports_error"] = message
+    st.error(message)
+
+
+def _analysis_reports_error_text(status_code):
+    return {
+        0: "The analysis reports service could not be reached.",
+        400: "Review the report filters and try again.",
+        404: "This report is not available in your authenticated account.",
+        503: "Analysis reports are temporarily unavailable. Please try again.",
+    }.get(status_code, "Analysis reports could not be loaded.")
+
+
+def _risk_badge(st, risk):
+    colors = {
+        "CRITICAL": ("#7f1d1d", "#fee2e2"), "HIGH": ("#9a3412", "#ffedd5"),
+        "MEDIUM": ("#854d0e", "#fef9c3"), "LOW": ("#166534", "#dcfce7"),
+        "UNKNOWN": ("#475569", "#e2e8f0"),
+    }
+    risk = str(risk or "UNKNOWN").upper()
+    foreground, background = colors.get(risk, colors["UNKNOWN"])
+    st.markdown(
+        f'<span style="display:inline-block;padding:.2rem .6rem;border-radius:999px;'
+        f'font-size:.78rem;font-weight:700;color:{foreground};background:{background};">{risk}</span>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_report_detail(st, detail):
+    st.divider()
+    st.markdown("### Report details")
+    headline = st.columns([1, 3])
+    with headline[0]:
+        _risk_badge(st, detail.get("risk_level"))
+    with headline[1]:
+        score = detail.get("risk_score")
+        st.markdown(f"**{detail.get('source_type', 'Report').replace('_', ' ').title()}**")
+        st.caption(f"Analyzed {detail.get('analysis_timestamp', 'time unavailable')}" + (f" · Risk score {score}" if score is not None else ""))
+    st.caption(f"Report ID: {detail.get('report_id', 'Unavailable')}")
+    st.markdown("**Explanation**")
+    st.write(detail.get("explanation") or "No explanation was recorded.")
+    if detail.get("warning"):
+        st.warning(detail["warning"])
+    st.markdown("**Detected indicators**")
+    indicators = detail.get("indicators") or []
+    if indicators:
+        for indicator in indicators:
+            if isinstance(indicator, dict):
+                st.markdown(f"- **{indicator.get('category', 'Indicator')}** · {indicator.get('severity', 'UNKNOWN')} — {indicator.get('explanation', '')}")
+    else:
+        st.caption("No threat indicators were recorded.")
+    actions = detail.get("recommended_actions") or []
+    if actions:
+        st.markdown("**Recommended actions**")
+        for action in actions:
+            st.markdown(f"- {action}")
+    languages = detail.get("detected_languages") or []
+    st.markdown("**Language information**")
+    st.caption(
+        f"Languages: {', '.join(languages) if languages else 'Unavailable'} · "
+        f"Status: {detail.get('language_status') or 'Unavailable'} · "
+        f"Code mixed: {'Yes' if detail.get('is_code_mixed') else 'No'}"
+    )
+    source = detail.get("source_type")
+    availability = detail.get("content_availability")
+    if source == "INCOMING_SMS" and detail.get("redacted_message_preview"):
+        st.markdown("**Redacted SMS preview**")
+        st.text(detail["redacted_message_preview"])
+        if detail.get("sender"):
+            st.caption(f"Sender: {detail['sender']}")
+    elif source == "VOICE_CALL":
+        transcript = detail.get("redacted_call_transcript")
+        if transcript and availability == "REDACTED_TRANSCRIPT":
+            st.markdown("**Redacted call transcript**")
+            st.text(transcript)
+            if detail.get("transcript_expires_at"):
+                st.caption(f"Transcript retained until {detail['transcript_expires_at']}.")
+        elif availability == "TRANSCRIPT_EXPIRED":
+            st.info(report_content_notice(detail))
+        else:
+            st.info(report_content_notice(detail))
+    elif source == "MANUAL_MESSAGE":
+        st.info(report_content_notice(detail))
+    st.caption(f"Analysis engine: {detail.get('engine_version') or 'Unavailable'}")
+
+
+def _render_analysis_reports(st, api, state):
+    st.markdown("## Analysis Reports")
+    st.caption("Authenticated history of manual message, incoming SMS, and call analysis. Historical reports are displayed without rerunning analysis.")
+    if "analysis_reports_filters" not in state:
+        state["analysis_reports_filters"] = {"source_type": None, "risk_level": None, "date_from": None, "date_to": None, "search": ""}
+    current = state["analysis_reports_filters"]
+    with st.form("analysis-reports-filters", clear_on_submit=False):
+        col_source, col_risk, col_start, col_end = st.columns(4)
+        source_labels = list(_REPORT_SOURCES)
+        risk_labels = list(_REPORT_RISKS)
+        source_default = next((i for i, value in enumerate(_REPORT_SOURCES.values()) if value == current.get("source_type")), 0)
+        risk_default = next((i for i, value in enumerate(_REPORT_RISKS.values()) if value == current.get("risk_level")), 0)
+        selected_source = col_source.selectbox("Source", source_labels, index=source_default)
+        selected_risk = col_risk.selectbox("Risk level", risk_labels, index=risk_default)
+        selected_from = col_start.date_input("From", value=date.fromisoformat(current["date_from"]) if current.get("date_from") else None)
+        selected_to = col_end.date_input("To", value=date.fromisoformat(current["date_to"]) if current.get("date_to") else None)
+        search = st.text_input("Search persisted report details", value=current.get("search", ""), max_chars=200)
+        submitted = st.form_submit_button("Apply filters", type="primary")
+    if submitted:
+        current.update({
+            "source_type": _REPORT_SOURCES[selected_source],
+            "risk_level": _REPORT_RISKS[selected_risk],
+            "date_from": selected_from.isoformat() if isinstance(selected_from, date) else None,
+            "date_to": selected_to.isoformat() if isinstance(selected_to, date) else None,
+            "search": search.strip(),
+        })
+        state["analysis_reports_items"] = None
+        state["analysis_reports_cursor"] = None
+        state["analysis_reports_has_more"] = False
+        state["analysis_reports_error"] = None
+    try:
+        if state.get("analysis_reports_items") is None or state.get("analysis_reports_cache_key") != ((state.get("customer") or {}).get("customer_key"), *_report_filter_key(state)):
+            with st.spinner("Loading your analysis reports…"):
+                load_analysis_reports(api, state)
+    except APIError as exc:
+        _analysis_reports_error(st, state, exc)
+        if st.button("Retry reports", key="analysis-reports-retry"):
+            state["analysis_reports_items"] = None
+            st.rerun()
+        return
+
+    items = state.get("analysis_reports_items") or []
+    counts = {risk: sum(1 for item in items if item.get("risk_level") == risk) for risk in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN")}
+    metrics = st.columns(5)
+    metrics[0].metric("Reports loaded", len(items))
+    for col, risk in zip(metrics[1:], ("CRITICAL", "HIGH", "MEDIUM", "LOW")):
+        col.metric(risk.title(), counts[risk])
+    st.caption("Counts and distributions reflect the report pages currently loaded. The API does not provide a total count.")
+    source_counts = {source: sum(1 for item in items if item.get("source_type") == source) for source in ("MANUAL_MESSAGE", "INCOMING_SMS", "VOICE_CALL")}
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**Source distribution · loaded reports**")
+        st.bar_chart(source_counts)
+    with right:
+        st.markdown("**Risk distribution · loaded reports**")
+        st.bar_chart(counts)
+
+    pending = state.pop("analysis_reports_pending_detail", None)
+    if isinstance(pending, dict):
+        state["analysis_reports_detail"] = None
+        state["analysis_reports_detail_key"] = None
+        try:
+            with st.spinner("Opening the authenticated SMS report…"):
+                open_analysis_report(api, state, pending.get("source_type"), pending.get("report_id"))
+        except APIError as exc:
+            _analysis_reports_error(st, state, exc, detail=True)
+    detail = state.get("analysis_reports_detail")
+    if isinstance(detail, dict):
+        _render_report_detail(st, detail)
+        if st.button("Close report details", key="analysis-reports-close-detail"):
+            state["analysis_reports_detail"] = None
+            state["analysis_reports_detail_key"] = None
+            st.rerun()
+
+    st.markdown("### Latest reports")
+    if not items:
+        st.info("No reports match these filters yet. Try a different source, risk level, date range, or search term.")
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        report_id = item.get("report_id")
+        source = item.get("source_type")
+        with st.container(border=True):
+            badge_col, main_col, action_col = st.columns([1, 5, 1])
+            with badge_col:
+                _risk_badge(st, item.get("risk_level"))
+            with main_col:
+                st.markdown(f"**{str(source or 'REPORT').replace('_', ' ').title()}** · {item.get('analysis_timestamp', 'Time unavailable')}")
+                if item.get("risk_score") is not None:
+                    st.caption(f"Risk score: {item['risk_score']}")
+                st.write(item.get("explanation") or "No explanation was recorded.")
+                indicators = item.get("indicators") or []
+                st.caption("Indicators: " + (", ".join(str(x.get("category", "Indicator")) for x in indicators if isinstance(x, dict)) or "None recorded"))
+                st.caption(f"Report ID: {report_id or 'Unavailable'}")
+            with action_col:
+                if report_id and st.button("View", key=f"analysis-report-open-{source}-{report_id}"):
+                    state["analysis_reports_detail"] = None
+                    state["analysis_reports_detail_key"] = None
+                    try:
+                        with st.spinner("Loading report details…"):
+                            open_analysis_report(api, state, source, report_id)
+                        st.rerun()
+                    except APIError as exc:
+                        _analysis_reports_error(st, state, exc, detail=True)
+    if state.get("analysis_reports_has_more") and st.button("Load more reports", key="analysis-reports-more"):
+        try:
+            with st.spinner("Loading more reports…"):
+                load_analysis_reports(api, state, append=True)
+            st.rerun()
+        except APIError as exc:
+            _analysis_reports_error(st, state, exc)
+
+
 def render(st, subfeature="Message Analysis", api=None, state=None):
     st.markdown(
         "<div class='security-banner' style='margin-bottom:1.2rem;'>"
@@ -723,6 +1135,7 @@ def render(st, subfeature="Message Analysis", api=None, state=None):
         st.info("Sign in to use authenticated scam assessment.")
         return
     if subfeature == "Message Analysis":
+        _render_android_sms_pairing(st, api, state)
         _render_message_analysis(st, api, state)
     elif subfeature == "Call Analysis":
         _render_call_analysis(st, api, state)
@@ -730,5 +1143,7 @@ def render(st, subfeature="Message Analysis", api=None, state=None):
         _render_transaction_risk(st, api, state)
     elif subfeature == "Investigations":
         _render_investigations(st, api, state)
+    elif subfeature == "Analysis Reports":
+        _render_analysis_reports(st, api, state)
     else:
         st.info("Investigation tracking is planned. No investigation is created here.")

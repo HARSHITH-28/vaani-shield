@@ -96,7 +96,7 @@ class ScamVoiceAssessmentTests(unittest.TestCase):
                 json={"audio_upload_id": upload_id, "language_hint": language_hint},
             )
 
-    def test_authenticated_english_voice_assessment_and_transcript_not_persisted(self):
+    def test_authenticated_english_voice_assessment_persists_only_redacted_transcript(self):
         upload = self._upload()
         self.assertEqual(upload.status_code, 201)
         mock = _MockTranscriber(
@@ -106,7 +106,11 @@ class ScamVoiceAssessmentTests(unittest.TestCase):
         self.assertEqual(result.status_code, 201, result.text)
         body = result.json()
         self.assertEqual(body["source_type"], "voice_call")
-        self.assertEqual(body["transcript"], mock.text)
+        self.assertNotIn("123456", body["transcript"])
+        self.assertEqual(
+            datetime.fromisoformat(body["transcript_expires_at"]),
+            datetime.fromisoformat(body["created_at"]) + timedelta(days=30),
+        )
         self.assertEqual(body["detected_languages"], ["en-IN"])
         self.assertEqual(body["transcription_status"], "completed")
         self.assertIn("Automated transcription may contain errors", body["transcription_warning"])
@@ -119,7 +123,10 @@ class ScamVoiceAssessmentTests(unittest.TestCase):
                 (body["assessment_id"],),
             ).fetchone()
             self.assertEqual(stored["source_mode"], "voice_call")
-            self.assertNotIn("transcript", stored.keys())
+            self.assertIn("redacted_transcript", stored.keys())
+            self.assertEqual(stored["transcript_status"], "AVAILABLE")
+            self.assertEqual(stored["redacted_transcript"], body["transcript"])
+            self.assertNotIn("123456", stored["redacted_transcript"])
             self.assertNotIn(mock.text, str(dict(stored)))
         finally:
             conn.close()

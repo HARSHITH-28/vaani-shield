@@ -166,6 +166,16 @@ class VaaniShieldAPI:
     def get_security_activity(self):
         return self._json("GET", "/api/v1/auth/demo/security-activity")
 
+    def create_android_sms_pairing_code(self, device_name: str | None = None):
+        """Create a short-lived Android pairing code with the current demo session."""
+        kwargs = {"json": {"device_name": device_name}} if device_name else {}
+        return self._json(
+            "POST",
+            "/api/v1/me/scam/devices/pair-token",
+            expected=(201,),
+            **kwargs,
+        )
+
     def get_demo_session(self):
         return self._json("GET", "/api/v1/auth/demo/session")
 
@@ -236,6 +246,41 @@ class VaaniShieldAPI:
         if cursor:
             params["cursor"] = cursor
         return self._json("GET", "/api/v1/me/scam/assessments", params=params)
+
+    def list_scam_reports(
+        self, limit=25, cursor=None, *, source_type=None, risk_level=None,
+        date_from=None, date_to=None, search=None,
+    ):
+        """List unified reports through the current authenticated session."""
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("Report limit must be between 1 and 100.")
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        if source_type:
+            params["source_type"] = source_type
+        if risk_level:
+            params["risk_level"] = risk_level
+        if date_from:
+            params["from"] = str(date_from)
+        if date_to:
+            params["to"] = str(date_to)
+        if search:
+            params["search"] = search
+        return self._json("GET", "/api/v1/me/scam/reports", params=params)
+
+    def get_scam_report(self, source_type: str, report_id: str):
+        allowed = {"MANUAL_MESSAGE", "INCOMING_SMS", "VOICE_CALL"}
+        source = str(source_type).upper()
+        if source not in allowed:
+            raise ValueError("Unsupported report source type.")
+        try:
+            canonical_id = str(UUID(str(report_id)))
+        except (ValueError, TypeError, AttributeError):
+            raise ValueError("A valid report identifier is required.") from None
+        return self._json(
+            "GET", f"/api/v1/me/scam/reports/{source}/{canonical_id}"
+        )
 
     def get_my_context(self, year=None, month=None):
         params = {}

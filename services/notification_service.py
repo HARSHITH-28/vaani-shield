@@ -274,3 +274,61 @@ def mark_all_notifications_read(customer_key: str) -> int:
     finally:
         conn.close()
 
+
+def create_sms_threat_notification(
+    customer_key: str,
+    sms_event_id: str,
+    risk_level: str,
+    sender: str,
+    warning: str,
+    *,
+    conn=None,
+) -> bool:
+    """Idempotently create a security_alert notification for HIGH/CRITICAL SMS threats."""
+    if not customer_key or not sms_event_id:
+        return False
+    normalized_risk = str(risk_level or "").strip().upper()
+    if normalized_risk not in {"HIGH", "CRITICAL"}:
+        return False
+
+    event_ref = f"sms-threat-{sms_event_id}"
+    title = f"SMS Security Alert ({normalized_risk}): {sender}"
+    message = warning or f"A {normalized_risk.lower()}-risk SMS message from {sender} was flagged by VaaniShield."
+    metadata = json.dumps(
+        {
+            "source": "android_sms_threat_intelligence",
+            "sms_event_id": str(sms_event_id),
+            "risk_level": normalized_risk,
+            "sender": sender,
+        }
+    )
+    now_text = _now_iso()
+
+    owns_conn = conn is None
+    active_conn = get_connection() if owns_conn else conn
+    try:
+        cur = active_conn.execute(
+            """
+            INSERT OR IGNORE INTO notifications (
+                notification_id, customer_key, category, title, message,
+                event_ref, is_read, created_at, metadata_json
+            ) VALUES (?, ?, 'security_alert', ?, ?, ?, 0, ?, ?)
+            """,
+            (
+                str(uuid4()),
+                customer_key,
+                title[:200],
+                message[:500],
+                event_ref,
+                now_text,
+                metadata,
+            ),
+        )
+        if owns_conn:
+            active_conn.commit()
+        return cur.rowcount > 0
+    finally:
+        if owns_conn:
+            active_conn.close()
+
+

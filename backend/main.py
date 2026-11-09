@@ -27,6 +27,8 @@ from backend.customer_support_routes import router as customer_support_router
 from backend.transaction_risk_routes import router as transaction_risk_router
 from backend.investigation_routes import router as investigation_router
 from backend.account_application_routes import router as account_application_router
+from backend.sms_threat_routes import router as sms_threat_router
+from backend.scam_report_routes import router as scam_report_router
 
 from services.banking_service import (
     get_customer_profile_by_key,
@@ -79,6 +81,8 @@ app.include_router(customer_support_router)
 app.include_router(transaction_risk_router)
 app.include_router(investigation_router)
 app.include_router(account_application_router)
+app.include_router(sms_threat_router)
+app.include_router(scam_report_router)
 
 
 @app.on_event("startup")
@@ -88,6 +92,8 @@ def initialize_database_on_startup():
     cleanup_expired_pending_actions()
     cleanup_expired_investigation_actions()
     start_cleanup_worker()
+    from services.scam_assessment_service import start_transcript_cleanup_worker
+    start_transcript_cleanup_worker()
     provider = orchestrator.provider_diagnostics()
     logging.getLogger("uvicorn.error").info(
         "assistant_provider_startup provider=%s model=%s credentials_configured=%s",
@@ -98,6 +104,8 @@ def initialize_database_on_startup():
 @app.on_event("shutdown")
 def stop_audio_cleanup_on_shutdown():
     stop_cleanup_worker()
+    from services.scam_assessment_service import stop_transcript_cleanup_worker
+    stop_transcript_cleanup_worker()
 
 
 # Local frontend development only.

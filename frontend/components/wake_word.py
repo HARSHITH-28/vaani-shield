@@ -258,10 +258,12 @@ def render_wake_word_listener(st, state):
               // Keep VoiceManager UI and manual mic mutual exclusion synced across reruns
               const mgr = parentWin.__vaaniVoiceManager;
               if (mgr && mgr.active) {{
-                const manualTray = parentDoc.querySelector('.st-key-copilot-voice-tray');
+                const manualTray = parentDoc.querySelector('.st-key-copilot-voice-tray') ||
+                  parentDoc.querySelector('.st-key-copilot-composer-pill [data-testid="stAudioInput"] button[aria-label*="Stop" i]') ||
+                  parentDoc.querySelector('.st-key-copilot-composer-pill [data-testid="stAudioInput"] button[title*="Stop" i]');
                 if (manualTray && (mgr.state === 'STANDBY' || mgr.state === 'COMMAND_LISTENING')) {{
                   mgr.stopAllRecognitions();
-                  mgr.updateUI('MANUAL_MIC', '🎙️ Manual recording active in Copilot', '#6366F1');
+                  mgr.updateUI('MANUAL_MIC', '🎙️ Manual recording active in Vaani AI', '#6366F1');
                 }} else if (!manualTray && mgr.state === 'MANUAL_MIC') {{
                   mgr.startWakeStandby(true);
                 }} else {{
@@ -424,15 +426,15 @@ def render_wake_word_listener(st, state):
                   }} else if (this.state === 'COMMAND_LISTENING') {{
                     statusTextEl.innerHTML = '👂 <b>Listening for Question:</b> Speak now (hands-free)';
                   }} else if (this.state === 'SUBMITTING' || this.state === 'PROCESSING') {{
-                    statusTextEl.innerHTML = '✨ <b>Submitting Question:</b> Sending to Vaani Copilot...';
+                    statusTextEl.innerHTML = '✨ <b>Submitting Question:</b> Sending to Vaani AI...';
                   }} else if (this.state === 'ASSISTANT_RESPONDING') {{
                     statusTextEl.innerHTML = '🔊 <b>Vaani Responding:</b> Speaking answer, standby will resume...';
                   }} else if (this.state === 'PERMISSION_BLOCKED') {{
                     statusTextEl.innerHTML = '⚠️ <b>Microphone Permission Blocked:</b> Allow mic in browser address bar';
                   }} else if (this.state === 'UNSUPPORTED') {{
-                    statusTextEl.innerHTML = '⚠️ <b>Web Speech API Unavailable:</b> Use manual mic 🎙️ in Copilot';
+                    statusTextEl.innerHTML = '⚠️ <b>Web Speech API Unavailable:</b> Use manual mic 🎙️ in Vaani AI';
                   }} else if (this.state === 'MANUAL_MIC') {{
-                    statusTextEl.innerHTML = '🎙️ <b>Wake-Word Paused:</b> Manual recording active in Copilot';
+                    statusTextEl.innerHTML = '🎙️ <b>Wake-Word Paused:</b> Manual recording active in Vaani AI';
                   }} else if (this.state === 'DISABLED') {{
                     statusTextEl.innerHTML = '🎙️ <b>Wake-Word Paused</b> (Manual Mic Active)';
                   }}
@@ -446,14 +448,14 @@ def render_wake_word_listener(st, state):
                 try {{
                   const panel = parentDoc.querySelector('.st-key-floating-assistant-panel') ||
                                 parentDoc.querySelector('.st-key-floating-assistant-dock');
-                  if (panel) return false;
+                  if (panel && panel.getClientRects().length) return false;
 
                   const toggleBtn = parentDoc.querySelector('.st-key-header-copilot-toggle button') ||
                                     parentDoc.querySelector('.st-key-floating-assistant-toggle button') ||
                                     parentDoc.querySelector('button[key="header-copilot-toggle"]') ||
                                     Array.from(parentDoc.querySelectorAll('button')).find(b => {{
                                       const txt = (b.textContent || '').trim();
-                                      return (txt.includes('Copilot') || txt.includes('Ask Vaani')) && !txt.includes('✕');
+                                      return (txt.includes('Copilot') || txt.includes('Vaani AI') || txt.includes('Ask Vaani')) && !txt.includes('✕');
                                     }});
                   if (toggleBtn && !toggleBtn.textContent.includes('✕')) {{
                     parentWin.__vaaniVoicePendingState = {{ action: 'START_COMMAND_LISTENING', time: Date.now() }};
@@ -475,11 +477,13 @@ def render_wake_word_listener(st, state):
                   this.standbyRestartTimer = null;
                 }}
 
-                // Check if manual mic tray is currently open in Copilot
-                const manualTray = parentDoc.querySelector('.st-key-copilot-voice-tray');
+                // Check if manual mic tray is currently open in Vaani AI
+                const manualTray = parentDoc.querySelector('.st-key-copilot-voice-tray') ||
+                  parentDoc.querySelector('.st-key-copilot-composer-pill [data-testid="stAudioInput"] button[aria-label*="Stop" i]') ||
+                  parentDoc.querySelector('.st-key-copilot-composer-pill [data-testid="stAudioInput"] button[title*="Stop" i]');
                 if (manualTray) {{
                   this.stopAllRecognitions();
-                  this.updateUI('MANUAL_MIC', '🎙️ Manual recording active in Copilot', '#6366F1');
+                  this.updateUI('MANUAL_MIC', '🎙️ Manual recording active in Vaani AI', '#6366F1');
                   this.standbyRestartTimer = pSetTimeout(() => {{ this.startWakeStandby(false); }}, 1500);
                   return;
                 }}
@@ -606,7 +610,7 @@ def render_wake_word_listener(st, state):
                 this.lastTriggerTime = now;
                 this.stopAllRecognitions();
 
-                this.updateUI('WAKE_DETECTED', '✨ "Hey Vaani" detected! Opening Copilot...', '#7C3AED');
+                this.updateUI('WAKE_DETECTED', '✨ "Hey Vaani" detected! Opening Vaani AI...', '#7C3AED');
                 playChime();
                 this.openCopilotIfClosed();
 
@@ -726,10 +730,12 @@ def render_wake_word_listener(st, state):
                 if (!this.active) return;
                 this.stopAllRecognitions();
 
-                // Check if manual mic tray is currently open in Copilot
-                const manualTray = parentDoc.querySelector('.st-key-copilot-voice-tray');
+                // Check if manual mic tray is currently open in Vaani AI
+                const manualTray = parentDoc.querySelector('.st-key-copilot-voice-tray') ||
+                  parentDoc.querySelector('.st-key-copilot-composer-pill [data-testid="stAudioInput"] button[aria-label*="Stop" i]') ||
+                  parentDoc.querySelector('.st-key-copilot-composer-pill [data-testid="stAudioInput"] button[title*="Stop" i]');
                 if (manualTray) {{
-                  this.updateUI('MANUAL_MIC', '🎙️ Manual recording active in Copilot', '#6366F1');
+                  this.updateUI('MANUAL_MIC', '🎙️ Manual recording active in Vaani AI', '#6366F1');
                   this.standbyRestartTimer = pSetTimeout(() => {{ this.startWakeStandby(false); }}, 1500);
                   return;
                 }}

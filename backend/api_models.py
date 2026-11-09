@@ -669,6 +669,9 @@ class ScamAssessmentDetail(ContractModel):
     language_status: Literal["supported", "uncertain", "unsupported"]
     engine_version: str
     created_at: datetime
+    redacted_transcript: str | None = None
+    transcript_expires_at: datetime | None = None
+    transcript_status: Literal["NOT_STORED", "AVAILABLE", "EXPIRED"] = "NOT_STORED"
 
 
 class ScamAssessmentSummary(ContractModel):
@@ -682,13 +685,43 @@ class ScamAssessmentSummary(ContractModel):
 
 
 class ScamVoiceAssessmentResponse(ScamAssessmentDetail):
-    """Transcript is returned for immediate review but is never persisted."""
+    """Redacted transcript is returned for immediate review and retained 30 days."""
 
     transcript: str
+    transcript_expires_at: datetime
     transcription_status: Literal["completed"] = "completed"
     transcription_warning: str = (
         "Automated transcription may contain errors. Review the transcript before relying on this assessment."
     )
+
+
+class ScamReport(ContractModel):
+    report_id: UUID
+    source_type: Literal["MANUAL_MESSAGE", "INCOMING_SMS", "VOICE_CALL"]
+    risk_level: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]
+    risk_score: float | None = None
+    analysis_timestamp: datetime
+    indicators: list[ScamAssessmentIndicator]
+    explanation: str
+    warning: str
+    recommended_actions: list[str]
+    detected_languages: list[LanguageCode]
+    language_status: Literal["supported", "uncertain", "unsupported"]
+    is_code_mixed: bool
+    engine_version: str
+    redacted_message_preview: str | None = None
+    redacted_call_transcript: str | None = None
+    transcript_expires_at: datetime | None = None
+    content_availability: Literal[
+        "REDACTED_SMS_PREVIEW", "REDACTED_TRANSCRIPT", "TRANSCRIPT_EXPIRED", "SOURCE_CONTENT_NOT_STORED"
+    ]
+    sender: str | None = None
+    source_package: str | None = None
+    device_id: str | None = None
+
+
+class ScamReportPage(CursorPage[ScamReport]):
+    pass
 
 
 class InvestigationEvidenceSummary(ContractModel):
@@ -857,6 +890,140 @@ class AccountApplicationSubmitRequest(ContractModel):
     confirmation_method: Literal["button"]
     review_digest: str = Field(min_length=64, max_length=64)
 
+
+DeviceStatus = Literal["PENDING", "ACTIVE", "PAUSED", "REVOKED"]
+DeviceStatusTransition = Literal[
+    "ACTIVE", "PAUSED", "REVOKED", "PAUSE", "RESUME", "REVOKE"
+]
+SmsSenderType = Literal[
+    "dlt_header",
+    "phone_number",
+    "phone",
+    "alphanumeric",
+    "short_code",
+    "shortcode",
+    "contact",
+    "unknown",
+]
+SmsRiskLevel = Literal["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+SmsEvidenceStrength = Literal["NONE", "LIMITED", "MODERATE", "STRONG"]
+
+
+class PairTokenCreateRequest(ContractModel):
+    device_name: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class PairTokenCreateResponse(ContractModel):
+    pairing_code: str = Field(min_length=8, max_length=8)
+    expires_at: datetime
+    expires_in_seconds: int = Field(gt=0)
+
+
+class DevicePairRequest(ContractModel):
+    pairing_code: str = Field(min_length=1, max_length=32)
+    device_id: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    device_name: str = Field(min_length=1, max_length=120)
+    device_model: str = Field(min_length=1, max_length=120)
+    android_version: str = Field(min_length=1, max_length=32)
+    app_version: str = Field(min_length=1, max_length=32)
+
+
+class DevicePairResponse(ContractModel):
+    device_id: str
+    device_name: str
+    device_model: str
+    android_version: str
+    app_version: str
+    status: Literal["ACTIVE"] = "ACTIVE"
+    device_token: str
+    paired_at: datetime
+
+
+class PairedDeviceSummary(ContractModel):
+    device_id: str
+    device_name: str
+    device_model: str | None = None
+    android_version: str | None = None
+    app_version: str | None = None
+    status: DeviceStatus
+    created_at: datetime
+    paired_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    revoked_at: datetime | None = None
+    updated_at: datetime
+
+
+class PairedDeviceListResponse(ContractModel):
+    items: list[PairedDeviceSummary]
+
+
+class DeviceStatusUpdateRequest(ContractModel):
+    status: DeviceStatusTransition
+
+
+class DeviceTokenRotateResponse(ContractModel):
+    device_id: str
+    status: DeviceStatus
+    device_token: str
+    updated_at: datetime
+
+
+class DeviceHeartbeatRequest(ContractModel):
+    app_version: str | None = Field(default=None, min_length=1, max_length=32)
+
+
+class DeviceHeartbeatResponse(ContractModel):
+    device_id: str
+    status: Literal["ACTIVE"]
+    forwarding_permitted: bool = True
+    last_seen_at: datetime
+    server_time: datetime
+
+
+class SmsIngestRequest(ContractModel):
+    source_package: str = Field(min_length=1, max_length=128)
+    sender: str = Field(min_length=1, max_length=120)
+    sender_type: str = Field(min_length=1, max_length=32)
+    message_text: str = Field(min_length=1, max_length=12000)
+    message_timestamp: str = Field(min_length=1, max_length=64)
+    client_dedup_key: str = Field(min_length=1, max_length=256)
+
+
+class SmsIngestResponse(ContractModel):
+    sms_event_id: UUID
+    device_id: str
+    deduplicated: bool = False
+    risk_level: SmsRiskLevel
+    evidence_strength: SmsEvidenceStrength
+    alert_generated: bool
+    received_at: datetime
+
+
+class SmsThreatSummary(ContractModel):
+    sms_event_id: UUID
+    device_id: str
+    source_package: str
+    sender: str
+    sender_type: SmsSenderType
+    redacted_message: str
+    message_timestamp: datetime
+    received_at: datetime
+    risk_level: SmsRiskLevel
+    evidence_strength: SmsEvidenceStrength
+    detected_languages: list[LanguageCode]
+    code_mixed: bool
+    language_status: Literal["supported", "uncertain", "unsupported"]
+    alert_generated: bool
+    acknowledged: bool
+    acknowledged_at: datetime | None = None
+
+
+class SmsThreatDetail(SmsThreatSummary):
+    indicators: list[ScamAssessmentIndicator]
+    explanation: str
+    warning: str
+    recommendations: list[str]
+    engine_version: str
 
 
 class FieldValidationError(ContractModel):

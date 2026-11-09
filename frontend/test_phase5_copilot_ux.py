@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from frontend.components.floating_assistant import render_floating_assistant
@@ -32,6 +33,8 @@ class TestCopilotUXAndComposer(unittest.TestCase):
             "img_upload_epoch": 0,
             "input_epoch": 0,
             "response_mode": "text",
+            "response_mode_explicit": False,
+            "composer_menu_epoch": 0,
             "response_language": "en-IN",
             "language_hint": "auto",
         }
@@ -76,6 +79,7 @@ class TestCopilotUXAndComposer(unittest.TestCase):
         self.assertEqual(len(self.state["pending_attachments"]), 1)
         self.assertEqual(self.state["pending_attachments"][0]["file_name"], "passbook.pdf")
         self.assertEqual(self.state["doc_upload_epoch"], 1)
+        self.assertEqual(self.state["composer_menu_epoch"], 1)
         st.rerun.assert_called_once()
 
     def test_handle_photo_upload_epoch_increment(self):
@@ -96,6 +100,7 @@ class TestCopilotUXAndComposer(unittest.TestCase):
 
         self.assertEqual(len(self.state["pending_attachments"]), 1)
         self.assertEqual(self.state["img_upload_epoch"], 1)
+        self.assertEqual(self.state["composer_menu_epoch"], 1)
         st.rerun.assert_called_once()
 
     def test_floating_assistant_header_has_no_plus_button(self):
@@ -109,14 +114,22 @@ class TestCopilotUXAndComposer(unittest.TestCase):
 
         render_floating_assistant(st, self.api, self.state, in_dock=True)
 
-        # Header columns should be 3 (brand, lang, close) with spec [3.0, 1.4, 0.4]
-        calls = [c for c in st.columns.call_args_list if c[0] and c[0][0] == [3.0, 1.4, 0.4]]
-        self.assertTrue(len(calls) >= 1)
+        # Brand and close control have their own row; selectors get a second, wide row.
+        calls = [c[0][0] for c in st.columns.call_args_list if c[0]]
+        self.assertIn([4.1, 0.65], calls)
+        self.assertIn([1, 1.3], calls)
         # Verify '+' button with key 'floating-assistant-new' is NEVER created in header
         button_keys = [
             c[1].get("key") for c in st.button.call_args_list if c[1].get("key")
         ]
         self.assertNotIn("floating-assistant-new", button_keys)
+
+    def test_dock_visibility_defaults_open_but_respects_explicit_close(self):
+        from frontend.components.floating_assistant import assistant_dock_is_visible
+
+        self.assertTrue(assistant_dock_is_visible({"assistant_open": False}))
+        self.assertFalse(assistant_dock_is_visible({"assistant_open": False, "assistant_dock_closed": True}))
+        self.assertTrue(assistant_dock_is_visible({"assistant_open": True, "assistant_dock_closed": True}))
 
     def test_floating_assistant_has_no_blocking_backdrop(self):
         """When Copilot opens, NO blocking backdrop overlay is rendered, keeping dashboard fully interactive."""
@@ -208,17 +221,18 @@ class TestCopilotUXAndComposer(unittest.TestCase):
         # Verify send button ➤
         self.assertIn("➤", button_calls)
 
-        # Verify microphone button is in composer pill
+        # The recorder itself is the single microphone control in the composer.
         button_keys = [c[1].get("key") for c in st.button.call_args_list if c[1].get("key")]
-        self.assertIn("copilot_mic_toggle_btn", button_keys)
+        self.assertNotIn("copilot_mic_toggle_btn", button_keys)
+        self.assertTrue(any(c[1].get("key") == "copilot-audio-0" for c in st.audio_input.call_args_list))
 
         # Verify multiline text area placeholder is 'Message Vaani...'
         text_area_calls = st.text_area.call_args_list
         self.assertTrue(len(text_area_calls) >= 1)
         self.assertEqual(text_area_calls[0][1].get("placeholder"), "Message Vaani...")
 
-    def test_copilot_docked_voice_tray(self):
-        """When copilot_show_voice is True, docked voice tray renders above composer without covering chat."""
+    def test_voice_recorder_is_directly_available_in_composer(self):
+        """The existing Streamlit audio recorder is directly available without a second voice tray click."""
         from frontend.pages.assistant import render as render_assistant
 
         st = MagicMock()
@@ -233,16 +247,45 @@ class TestCopilotUXAndComposer(unittest.TestCase):
         st.text_area.return_value = ""
 
         self.api.get_conversation_turns.return_value = {"items": [], "has_more": False}
-        self.state["copilot_show_voice"] = True
+        self.state["copilot_show_voice"] = False
         self.state["conversation_messages"] = [{"role": "assistant", "text": "Hello!"}]
 
         render_assistant(st, self.api, self.state, compact=True)
 
-        container_keys = [c[1].get("key") for c in st.container.call_args_list if c[1].get("key")]
-        self.assertIn("copilot-voice-tray", container_keys)
-
         button_keys = [c[1].get("key") for c in st.button.call_args_list if c[1].get("key")]
-        self.assertIn("btn_close_voice_tray", button_keys)
+        self.assertNotIn("copilot_mic_toggle_btn", button_keys)
+        st.audio_input.assert_called_once()
+        self.assertEqual(st.audio_input.call_args.kwargs["key"], "copilot-audio-0")
+
+    def test_new_conversation_advances_popover_key_to_dismiss_menu(self):
+        from frontend.pages.assistant import render as render_assistant
+
+        st = MagicMock()
+        st.container.return_value.__enter__.return_value = st
+        st.popover.return_value.__enter__.return_value = st
+        st.expander.return_value.__enter__.return_value = st
+        st.columns.side_effect = lambda spec, **kw: tuple(MagicMock() for _ in range(len(spec) if isinstance(spec, (list, tuple)) else spec))
+        st.file_uploader.return_value = None
+        st.audio_input.return_value = None
+        st.text_area.return_value = ""
+        st.button.side_effect = lambda *args, **kwargs: kwargs.get("key") == "popover_new_conversation"
+        self.api.get_conversation_turns.return_value = {"items": [], "has_more": False}
+        self.api.create_conversation.return_value = {"conversation_id": "new-conversation"}
+        self.state["conversation_messages"] = [{"role": "assistant", "text": "Previous"}]
+
+        render_assistant(st, self.api, self.state, compact=True)
+
+        self.assertEqual(self.state["conversation_id"], "new-conversation")
+        self.assertEqual(self.state["composer_menu_epoch"], 1)
+        self.assertTrue(any(c.kwargs.get("key") == "composer_actions_popover_0" for c in st.popover.call_args_list))
+
+    def test_assistant_contrast_and_recording_states_have_explicit_styles(self):
+        css = (Path(__file__).parent / "assets" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn(".chatgpt-welcome-subtitle", css)
+        self.assertIn("color:#FBF9FF !important", css)
+        self.assertIn("[aria-label*=\"Stop\" i]", css)
+        self.assertIn("background:#B4233A !important", css)
+        self.assertIn("[role=\"option\"][aria-selected=\"true\"]", css)
 
 
 if __name__ == "__main__":

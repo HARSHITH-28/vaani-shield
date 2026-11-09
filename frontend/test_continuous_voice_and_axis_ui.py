@@ -11,19 +11,22 @@ from frontend.components.fintech_ui import (
 from frontend.components.wake_word import render_wake_word_listener
 
 
-class TestAxisBankingUI(unittest.TestCase):
+class TestApprovedPurpleBankingUI(unittest.TestCase):
     def setUp(self):
         self.css_path = Path(__file__).parent / "assets" / "styles.css"
         self.assertTrue(self.css_path.exists(), "styles.css must exist")
         self.css = self.css_path.read_text(encoding="utf-8")
 
-    def test_axis_bank_inspired_tokens(self):
-        """Verify clean corporate banking palette: Axis burgundy, deep navy, clean white cards."""
-        # Axis burgundy accent and deep navy typography
-        self.assertIn("#97144D", self.css)
-        self.assertIn("#0F172A", self.css)
+    def test_approved_purple_and_white_tokens(self):
+        """Verify the approved VaaniShield lavender, purple, and white design tokens."""
+        self.assertIn("--primary-violet: #5B3FC4", self.css)
+        self.assertIn("--primary-violet-dark: #472E9E", self.css)
+        self.assertIn("--light-lavender: #EEE9FF", self.css)
         self.assertIn("--bg-card: #FFFFFF", self.css)
-        self.assertIn("--border-light: #E2E8F0", self.css)
+        self.assertIn("--border-light: #E7E0FF", self.css)
+        # Risk and transaction status colors remain semantic.
+        self.assertIn("--status-emerald: #059669", self.css)
+        self.assertIn("--status-coral: #DC2626", self.css)
 
     def test_balance_hero_responsive_and_clean_design(self):
         """Verify balance hero uses responsive typography and executive styling."""
@@ -50,12 +53,12 @@ class TestAxisBankingUI(unittest.TestCase):
         self.assertIn("calc(100% - var(--copilot-dock-reserve))", self.css)
 
         # Metric value & label wrapping
-        self.assertIn(".st-key-banking-workspace-copilot-open div[data-testid=\"stMetricValue\"]", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) div[data-testid=\"stMetricValue\"]", self.css)
         self.assertIn("overflow-wrap: anywhere", self.css)
-        self.assertIn(".st-key-banking-workspace-copilot-open div[data-testid=\"stMetricLabel\"]", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) div[data-testid=\"stMetricLabel\"]", self.css)
 
         # Cards and columns reflow
-        self.assertIn(".st-key-banking-workspace-copilot-open div[data-testid=\"stHorizontalBlock\"]", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) div[data-testid=\"stHorizontalBlock\"]", self.css)
         self.assertIn("flex-wrap: wrap !important", self.css)
 
 
@@ -576,14 +579,14 @@ class TestTargetedFrontendRefinements(unittest.TestCase):
     def test_issue_1_content_overflow_and_metric_wrapping_all_tabs(self):
         """Verify metric cards, card layouts, and values wrap cleanly without clipping across all tabs."""
         # Cards page virtual card & limits reflow
-        self.assertIn(".st-key-banking-workspace-copilot-open div[data-testid=\"stHorizontalBlock\"]:has(.acct-status-pill)", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) div[data-testid=\"stHorizontalBlock\"]:has(.acct-status-pill)", self.css)
         self.assertIn("flex: 1 1 100% !important", self.css)
 
         # Overview page stacking
-        self.assertIn(".st-key-banking-workspace-copilot-open div[data-testid=\"stHorizontalBlock\"]:has(.acct-summary-item)", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) div[data-testid=\"stHorizontalBlock\"]:has(.acct-summary-item)", self.css)
 
         # Metric value & label wrapping
-        self.assertIn(".st-key-banking-workspace-copilot-open div[data-testid=\"stMetricValue\"]", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) div[data-testid=\"stMetricValue\"]", self.css)
         self.assertIn("white-space: normal !important", self.css)
         self.assertIn("word-break: break-word !important", self.css)
         self.assertIn("overflow-wrap: anywhere !important", self.css)
@@ -592,19 +595,19 @@ class TestTargetedFrontendRefinements(unittest.TestCase):
         self.assertIn("div[data-testid=\"stMetricValue\"]", self.css)
 
         # Loans detail grid and header reflow
-        self.assertIn(".st-key-banking-workspace-copilot-open .loan-card-header", self.css)
-        self.assertIn(".st-key-banking-workspace-copilot-open .loan-details-grid", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) .loan-card-header", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) .loan-details-grid", self.css)
         self.assertIn("repeat(2, minmax(130px, 1fr))", self.css)
 
         # Transactions filters reflow
-        self.assertIn(".st-key-banking-workspace-copilot-open form div[data-testid=\"column\"]", self.css)
+        self.assertIn(":is(.st-key-banking-workspace-copilot-open,.st-key-banking-workspace-copilot-closed) form div[data-testid=\"column\"]", self.css)
 
     def test_issue_2_typography_hierarchy_main_features_and_subfeatures(self):
         """Verify Level 2 main feature buttons are bold 700/800 and Level 3 sidebar items are semibold 600/700."""
         # Level 2 Horizontal Nav typography
-        self.assertIn(".st-key-main-nav-container div[data-testid=\"column\"] button", self.css)
+        self.assertIn(":is(.st-key-main-nav-container-copilot-open,.st-key-main-nav-container) div[data-testid=\"column\"] button", self.css)
         self.assertIn("font-weight: 700 !important", self.css)
-        self.assertIn(".st-key-main-nav-container div[data-testid=\"column\"] button[kind=\"primary\"]", self.css)
+        self.assertIn(":is(.st-key-main-nav-container-copilot-open,.st-key-main-nav-container) div[data-testid=\"column\"] button[kind=\"primary\"]", self.css)
         self.assertIn("font-weight: 800 !important", self.css)
 
         # Level 3 Sidebar Subfeatures typography

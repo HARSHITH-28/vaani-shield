@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 import os
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -92,6 +93,165 @@ class AssistantOrchestrationTests(unittest.TestCase):
         self.provider_patch.stop()
         self.db_path_patch.stop()
         self.temp_dir.cleanup()
+
+    def test_long_banking_request_decomposes_all_read_intents(self):
+        tools = _required_tools_for_question(
+            "Show my account balance, last five transactions, spending analysis, "
+            "active cards, and loans."
+        )
+        self.assertEqual(tools, {
+            "get_account_balance", "get_recent_transactions", "get_spending_summary",
+            "get_card_details", "get_loan_details",
+        })
+
+    def test_multi_intent_reads_run_concurrently_and_are_reported_by_section(self):
+        from services.llm_adapters import MockLLMProvider
+
+        self.orchestrator.llm_provider = MockLLMProvider([])
+        barrier = threading.Barrier(5)
+        values = {
+            "get_account_balance": [{"account_type": "SAVINGS", "balance": 1250.5}],
+            "get_recent_transactions": [{"merchant": "Market", "amount": 40}],
+            "get_spending_summary": {"total_spent": 40, "net_cash_flow": 1210.5},
+            "get_card_details": [{"card_type": "DEBIT", "status": "ACTIVE"}],
+            "get_loan_details": [{"loan_type": "HOME", "status": "ACTIVE", "monthly_emi": 800}],
+        }
+
+        def read(tool_name, principal, arguments):
+            barrier.wait(timeout=3)
+            return values[tool_name]
+
+        with patch("services.assistant_service.execute_tool", side_effect=read) as execute:
+            response = self.orchestrator.process_turn(
+                self.principal,
+                turn_request("Show my account balance, last five transactions, spending analysis, active cards, and loans."),
+            )
+
+        self.assertEqual(execute.call_count, 5)
+        self.assertEqual({item.tool_name for item in response.tool_results}, set(values))
+        self.assertTrue(all(item.status == "succeeded" for item in response.tool_results))
+        for heading in ("Account balance:", "Recent transactions:", "Spending summary:", "Active cards:", "Loans:"):
+            self.assertIn(heading, response.assistant_text)
+        self.assertIn("Merchant: Market", response.assistant_text)
+        self.assertIn("Amount: ₹40.00", response.assistant_text)
+        self.assertNotIn('"merchant"', response.assistant_text)
+        self.assertNotIn("transaction_ref", response.assistant_text)
+        self.assertIn("HOME; monthly EMI", response.assistant_text)
+        self.assertIn(5, [call.args[2].get("limit") for call in execute.call_args_list])
+
+    def test_multi_intent_partial_tool_failure_keeps_other_sections_and_marks_unavailable(self):
+        from services.llm_adapters import MockLLMProvider
+
+        self.orchestrator.llm_provider = MockLLMProvider([])
+        values = {
+            "get_account_balance": [{"account_type": "SAVINGS", "balance": 1250.5}],
+            "get_recent_transactions": [{"merchant": "Market", "amount": 40}],
+            "get_spending_summary": {"total_spent": 40},
+            "get_card_details": [{"card_type": "DEBIT", "status": "ACTIVE"}],
+        }
+
+        def read(tool_name, principal, arguments):
+            if tool_name == "get_loan_details":
+                raise RuntimeError("database unavailable")
+            return values[tool_name]
+
+        with patch("services.assistant_service.execute_tool", side_effect=read):
+            response = self.orchestrator.process_turn(
+                self.principal,
+                turn_request("Show my account balance, last five transactions, spending analysis, active cards, and loans."),
+            )
+
+        self.assertEqual(len(response.tool_results), 5)
+        self.assertEqual(
+            next(item.status for item in response.tool_results if item.tool_name == "get_loan_details"),
+            "failed",
+        )
+        self.assertIn("Loans:\nUnavailable:", response.assistant_text)
+        for heading in ("Account balance:", "Recent transactions:", "Spending summary:", "Active cards:"):
+            self.assertIn(heading, response.assistant_text)
+
+    def test_banking_request_after_support_proposal_is_isolated_from_ticket_state(self):
+        from services.llm_interfaces import LLMResponse, LLMToolCall
+        from services.llm_adapters import MockLLMProvider
+
+        self.orchestrator.llm_provider = MockLLMProvider([
+            LLMResponse(tool_calls=(LLMToolCall(
+                name="propose_support_ticket",
+                arguments={
+                    "category": "card", "priority": "HIGH",
+                    "subject": "Card payment failed",
+                    "description": "My debit card payment was declined.",
+                },
+                call_id="support-proposal",
+            ),))
+        ])
+        proposal = self.orchestrator.process_turn(
+            self.principal,
+            turn_request("Create a high priority card support ticket. Subject: Card payment failed. Description: My debit card payment was declined."),
+        )
+        self.assertIsNotNone(proposal.pending_action)
+
+        values = {
+            "get_account_balance": [{"account_type": "SAVINGS", "balance": 500}],
+            "get_recent_transactions": [{"merchant": "Market", "amount": 40}],
+            "get_spending_summary": {"total_spent": 40},
+            "get_card_details": [{"card_type": "DEBIT", "status": "ACTIVE"}],
+            "get_loan_details": [],
+        }
+        with patch(
+            "services.assistant_service.execute_tool",
+            side_effect=lambda name, principal, arguments: values[name],
+        ) as execute:
+            response = self.orchestrator.process_turn(
+                self.principal,
+                turn_request(
+                    "Show my account balance, last five transactions, spending analysis, active cards, and loans.",
+                    conversation_id=proposal.conversation_id,
+                ),
+            )
+        self.assertEqual({call.args[0] for call in execute.call_args_list}, set(values))
+        self.assertIsNone(response.pending_action)
+        self.assertNotIn("Card payment failed", response.assistant_text)
+        self.assertIn("Account balance:", response.assistant_text)
+
+    def test_balance_transactions_and_loans_render_as_separate_structured_sections(self):
+        from services.llm_adapters import MockLLMProvider
+
+        self.orchestrator.llm_provider = MockLLMProvider([])
+        values = {
+            "get_account_balance": [{"account_type": "SAVINGS", "balance": 1234.5}],
+            "get_recent_transactions": [{
+                "transaction_date": "2026-11-09", "merchant": "Market",
+                "description": "Grocery purchase", "transaction_type": "DEBIT",
+                "amount": 42.75, "transaction_ref": "TR-SECRET-REF",
+            }],
+            "get_loan_details": [{
+                "loan_type": "HOME", "outstanding_amount": 50000,
+                "monthly_emi": 1200, "status": "ACTIVE",
+            }],
+        }
+        with patch(
+            "services.assistant_service.execute_tool",
+            side_effect=lambda name, _principal, _arguments: values[name],
+        ):
+            response = self.orchestrator.process_turn(
+                self.principal,
+                turn_request("Show my account balance, last five transactions, and loans."),
+            )
+
+        text = response.assistant_text
+        self.assertIn("Account balance:", text)
+        self.assertIn("available balance: ₹1,234.50", text)
+        self.assertIn("Recent transactions:", text)
+        self.assertIn("Date: 2026-11-09", text)
+        self.assertIn("Merchant: Market", text)
+        self.assertIn("Type: DEBIT", text)
+        self.assertIn("Amount: ₹42.75", text)
+        self.assertIn("Loans:", text)
+        self.assertIn("outstanding amount ₹50,000.00", text)
+        self.assertIn("monthly EMI ₹1,200.00", text)
+        self.assertNotIn("TR-SECRET-REF", text)
+        self.assertNotIn('"transaction_date"', text)
 
     def test_authenticated_dispatch_response_and_turn_persistence(self):
         with patch(

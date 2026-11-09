@@ -363,6 +363,25 @@ def support_confirmation_state(pending_action, outcome=None, *, now=None):
         return "invalid"
 
 
+def _render_submitted_support_ticket(st, message, ticket_ref, state):
+    if not ticket_ref:
+        return
+    message["pending_action"] = None
+    message["support_submitted_ticket_ref"] = ticket_ref
+    with st.container(border=True):
+        st.markdown("#### Support ticket submitted")
+        st.success(f"Ticket submitted: {ticket_ref}")
+        if st.button(
+            "📋 View in My Support Tickets",
+            key=f"view-ticket-submitted-{ticket_ref}", type="primary",
+        ):
+            from frontend.navigation import request_navigation
+            request_navigation(state, "Customer Support", "Track Complaints")
+            state["support_selected_ticket_ref"] = ticket_ref
+            state["support_ticket_filter_key"] = None
+            st.rerun()
+
+
 def _render_support_action(st, message, api, state):
     pending = message.get("pending_action")
     close_confirmation = message.get("support_close_confirmation")
@@ -380,9 +399,18 @@ def _render_support_action(st, message, api, state):
         if str(pending.get("conversation_id")) != str(state.get("conversation_id")):
             st.caption("This proposal belongs to another conversation and is no longer actionable here.")
             return
+        outcome_key = f"create:{pending.get('confirmation_id')}"
+        outcome = state.get("support_action_outcomes", {}).get(outcome_key, {})
+        confirmation_state = support_confirmation_state(pending, outcome)
+        if confirmation_state == "executed":
+            result = outcome.get("action_result") or {}
+            ticket_ref = ((result.get("data") or {}).get("ticket_ref"))
+            _render_submitted_support_ticket(st, message, ticket_ref, state)
+            return
         with st.container(border=True):
             st.markdown("#### Support ticket proposal")
-            st.warning("This ticket has **not** been submitted.")
+            if confirmation_state == "pending":
+                st.warning("This ticket has **not** been submitted.")
             st.write(f"**Category:** {str(action.get('category', '—')).replace('_', ' ').title()}")
             st.write(f"**Subject:** {action.get('subject', '—')}")
             st.write(f"**Priority:** {action.get('priority', '—')}")
@@ -408,7 +436,7 @@ def _render_support_action(st, message, api, state):
                 if ticket_ref:
                     if st.button("📋 View in My Support Tickets", key=f"view-ticket-{outcome_key}", type="primary"):
                         from frontend.navigation import request_navigation
-                        request_navigation(state, "Customer Support", "My Support Tickets")
+                        request_navigation(state, "Customer Support", "Track Complaints")
                         state["support_selected_ticket_ref"] = ticket_ref
                         st.rerun()
             elif confirmation_state == "declined":
@@ -693,7 +721,11 @@ def render_messages(st, messages: list[dict], state, api=None):
                             state, "Banking Information", subfeature, step=nav.get("step"),
                         )
                         st.rerun()
-            if role == "assistant" and api and (
+            if role == "assistant" and message.get("support_submitted_ticket_ref"):
+                _render_submitted_support_ticket(
+                    st, message, message["support_submitted_ticket_ref"], state,
+                )
+            elif role == "assistant" and api and (
                 message.get("pending_action") or message.get("support_close_confirmation")
             ):
                 action_type = ((message.get("pending_action") or {}).get("action") or {}).get("action_type")

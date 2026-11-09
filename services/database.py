@@ -146,7 +146,10 @@ def initialize_database():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             status TEXT NOT NULL DEFAULT 'active'
-                CHECK (status IN ('active', 'archived', 'closed'))
+                CHECK (status IN ('active', 'archived', 'closed')),
+            context_summary_json TEXT,
+            context_summary_through_sequence INTEGER NOT NULL DEFAULT 0
+                CHECK (context_summary_through_sequence >= 0)
             -- Ownership is enforced by the service against the authenticated
             -- stable key. Avoid a parent FK because legacy DB migration adds
             -- the customer_key uniqueness index after this schema script.
@@ -198,7 +201,11 @@ def initialize_database():
             is_code_mixed INTEGER NOT NULL CHECK (is_code_mixed IN (0, 1)),
             language_status TEXT NOT NULL CHECK (language_status IN ('supported', 'uncertain', 'unsupported')),
             engine_version TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            redacted_transcript TEXT,
+            transcript_expires_at TEXT,
+            transcript_status TEXT NOT NULL DEFAULT 'NOT_STORED'
+                CHECK (transcript_status IN ('NOT_STORED', 'AVAILABLE', 'EXPIRED'))
         );
         CREATE INDEX IF NOT EXISTS idx_scam_assessments_owner_created
             ON scam_assessments(customer_key, created_at DESC, assessment_id DESC);
@@ -254,6 +261,16 @@ def initialize_database():
             )
         if "deleted_at" not in turn_columns:
             conn.execute("ALTER TABLE conversation_turns ADD COLUMN deleted_at TEXT")
+        conversation_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(conversations)")
+        }
+        if "context_summary_json" not in conversation_columns:
+            conn.execute("ALTER TABLE conversations ADD COLUMN context_summary_json TEXT")
+        if "context_summary_through_sequence" not in conversation_columns:
+            conn.execute(
+                "ALTER TABLE conversations ADD COLUMN context_summary_through_sequence "
+                "INTEGER NOT NULL DEFAULT 0 CHECK (context_summary_through_sequence >= 0)"
+            )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_conversation_turns_visible "
             "ON conversation_turns(conversation_id, deleted_at, sequence_number)"
@@ -446,6 +463,20 @@ def initialize_database():
                 "ALTER TABLE scam_assessments ADD COLUMN source_mode TEXT NOT NULL "
                 "DEFAULT 'typed_message' CHECK (source_mode IN ('typed_message', 'voice_call'))"
             )
+        # Additive call transcript retention. Historical rows remain NOT_STORED.
+        if "redacted_transcript" not in scam_columns:
+            conn.execute("ALTER TABLE scam_assessments ADD COLUMN redacted_transcript TEXT")
+        if "transcript_expires_at" not in scam_columns:
+            conn.execute("ALTER TABLE scam_assessments ADD COLUMN transcript_expires_at TEXT")
+        if "transcript_status" not in scam_columns:
+            conn.execute(
+                "ALTER TABLE scam_assessments ADD COLUMN transcript_status TEXT NOT NULL "
+                "DEFAULT 'NOT_STORED' CHECK (transcript_status IN ('NOT_STORED', 'AVAILABLE', 'EXPIRED'))"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scam_assessments_transcript_expiry "
+            "ON scam_assessments(transcript_status, transcript_expires_at)"
+        )
 
         # Additive migration for databases created before customer_key existed.
         customer_columns = {
@@ -740,6 +771,101 @@ def initialize_database():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_uploaded_attachments_conversation "
             "ON uploaded_attachments(conversation_id, customer_key)"
+        )
+
+        # Android SMS Threat Intelligence (Phase 2): Additive customer-scoped
+        # paired companion devices and redacted SMS threat events.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS paired_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL UNIQUE,
+                customer_key TEXT NOT NULL,
+                device_name TEXT NOT NULL,
+                device_model TEXT,
+                android_version TEXT,
+                app_version TEXT,
+                status TEXT NOT NULL CHECK (status IN ('PENDING', 'ACTIVE', 'PAUSED', 'REVOKED')),
+                pairing_code_hash TEXT UNIQUE,
+                pairing_code_expires_at TEXT,
+                token_hash TEXT UNIQUE,
+                created_at TEXT NOT NULL,
+                paired_at TEXT,
+                last_seen_at TEXT,
+                revoked_at TEXT,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (customer_key) REFERENCES customers(customer_key) ON DELETE RESTRICT
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_paired_devices_customer_status "
+            "ON paired_devices(customer_key, status, created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_paired_devices_pairing_lookup "
+            "ON paired_devices(pairing_code_hash, status)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_paired_devices_token_lookup "
+            "ON paired_devices(token_hash, status)"
+        )
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sms_threat_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sms_event_id TEXT NOT NULL UNIQUE,
+                customer_key TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                dedup_fingerprint TEXT NOT NULL,
+                source_package TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                sender_type TEXT NOT NULL CHECK (
+                    sender_type IN (
+                        'dlt_header', 'phone_number', 'phone', 'alphanumeric',
+                        'short_code', 'shortcode', 'contact', 'unknown'
+                    )
+                ),
+                redacted_message TEXT NOT NULL,
+                message_timestamp TEXT NOT NULL,
+                received_at TEXT NOT NULL,
+                risk_level TEXT NOT NULL CHECK (
+                    risk_level IN ('UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
+                ),
+                evidence_strength TEXT NOT NULL CHECK (
+                    evidence_strength IN ('NONE', 'LIMITED', 'MODERATE', 'STRONG')
+                ),
+                indicators_json TEXT NOT NULL,
+                explanation TEXT NOT NULL,
+                warning TEXT NOT NULL,
+                recommendations_json TEXT NOT NULL,
+                detected_languages_json TEXT NOT NULL,
+                code_mixed INTEGER NOT NULL DEFAULT 0 CHECK (code_mixed IN (0, 1)),
+                language_status TEXT NOT NULL CHECK (
+                    language_status IN ('supported', 'uncertain', 'unsupported')
+                ),
+                engine_version TEXT NOT NULL,
+                alert_generated INTEGER NOT NULL DEFAULT 0 CHECK (alert_generated IN (0, 1)),
+                acknowledged INTEGER NOT NULL DEFAULT 0 CHECK (acknowledged IN (0, 1)),
+                acknowledged_at TEXT,
+                UNIQUE (customer_key, dedup_fingerprint),
+                FOREIGN KEY (customer_key) REFERENCES customers(customer_key) ON DELETE RESTRICT,
+                FOREIGN KEY (device_id) REFERENCES paired_devices(device_id) ON DELETE RESTRICT
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sms_threat_events_customer_received "
+            "ON sms_threat_events(customer_key, received_at DESC, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sms_threat_events_customer_device "
+            "ON sms_threat_events(customer_key, device_id, received_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sms_threat_events_customer_risk "
+            "ON sms_threat_events(customer_key, risk_level, acknowledged, received_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sms_threat_events_customer_timestamp "
+            "ON sms_threat_events(customer_key, message_timestamp DESC)"
         )
 
         conn.commit()

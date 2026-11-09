@@ -6,6 +6,9 @@ import base64
 from datetime import datetime, timezone
 import json
 import re
+import logging
+import threading
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 from services import database
@@ -52,7 +55,7 @@ def _owner(principal: CustomerPrincipal) -> str:
     return principal.customer_key
 
 
-def _redact(text: str) -> str:
+def _redact(text: str, *, max_length: int = 500) -> str:
     """Remove credential values and common direct identifiers from evidence."""
     value = text
     patterns = (
@@ -75,7 +78,7 @@ def _redact(text: str) -> str:
     )
     for pattern, replacement in patterns:
         value = re.sub(pattern, replacement, value)
-    return value[:500]
+    return value[:max_length]
 
 
 def _cursor_offset(cursor: str | None) -> int:
@@ -136,6 +139,7 @@ def create_assessment(
     _source_mode: str = "typed_message",
     _detected_languages: tuple[str, ...] | list[str] | None = None,
     _is_code_mixed: bool = False,
+    _redacted_transcript: str | None = None,
 ) -> dict:
     owner = _owner(principal)
     if not isinstance(message_text, str):
@@ -152,6 +156,8 @@ def create_assessment(
     )
     if _source_mode not in {"typed_message", "voice_call"}:
         raise InvalidAssessmentError("Unsupported assessment source.")
+    if _redacted_transcript is not None and _source_mode != "voice_call":
+        raise InvalidAssessmentError("Transcripts are only valid for call assessments.")
     try:
         result = _public_engine_result(
             analyze_scam_text(message_text, detected_languages=languages).to_dict(),
@@ -162,6 +168,10 @@ def create_assessment(
 
     assessment_id = str(uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
+    transcript_expires_at = (
+        (datetime.fromisoformat(created_at) + timedelta(days=30)).isoformat()
+        if _redacted_transcript is not None else None
+    )
     row = {
         "assessment_id": assessment_id,
         "source_type": "typed_message",
@@ -178,8 +188,9 @@ def create_assessment(
                     assessment_id, customer_key, source_type, source_mode, risk_level,
                     indicators_json, explanation, evidence_strength, warning,
                     recommended_steps_json, detected_languages_json,
-                    is_code_mixed, language_status, engine_version, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    is_code_mixed, language_status, engine_version, created_at,
+                    redacted_transcript, transcript_expires_at, transcript_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     assessment_id, owner, "typed_message", _source_mode, row["risk_level"],
                     json.dumps(row["indicators"], ensure_ascii=False),
@@ -187,6 +198,8 @@ def create_assessment(
                     json.dumps(row["recommended_steps"], ensure_ascii=False),
                     json.dumps(row["detected_languages"]), int(row["is_code_mixed"]),
                     row["language_status"], ENGINE_VERSION, created_at,
+                    _redacted_transcript, transcript_expires_at,
+                    "AVAILABLE" if _redacted_transcript is not None else "NOT_STORED",
                 ),
             )
     finally:
@@ -201,7 +214,7 @@ def create_voice_assessment(
     *,
     transcriber=None,
 ) -> dict:
-    """Consume one owned upload and assess its transcript without persisting it."""
+    """Consume one owned upload and retain only a redacted transcript for 30 days."""
     _owner(principal)
     if language_hint not in {"auto", "en-IN", "kn-IN", "hi-IN"}:
         raise InvalidAssessmentError("Unsupported language hint.")
@@ -244,10 +257,10 @@ def create_voice_assessment(
         _source_mode="voice_call",
         _detected_languages=languages,
         _is_code_mixed=bool(getattr(transcription, "is_code_mixed", False)),
+        _redacted_transcript=_redact(transcript.strip(), max_length=12000),
     )
-    # Included only in the immediate authenticated response; persistence above
-    # receives structured engine output only.
-    assessment["transcript"] = transcript.strip()
+    assessment["transcript"] = assessment.pop("redacted_transcript", None)
+    assessment["transcript_expires_at"] = assessment.get("transcript_expires_at")
     assessment["transcription_status"] = "completed"
     assessment["transcription_warning"] = (
         "Automated transcription may contain errors. Review the transcript before relying on this assessment."
@@ -294,6 +307,7 @@ def get_assessment(
             "SELECT assessment_id, source_mode AS source_type, risk_level, indicators_json, "
             "explanation, evidence_strength, warning, recommended_steps_json, "
             "detected_languages_json, is_code_mixed, language_status, engine_version, created_at "
+            ", redacted_transcript, transcript_expires_at, transcript_status "
             "FROM scam_assessments WHERE assessment_id = ? AND customer_key = ?",
             (str(assessment_id), owner),
         ).fetchone()
@@ -301,4 +315,64 @@ def get_assessment(
         conn.close()
     if row is None:
         raise AssessmentNotFoundError
-    return _serialize_detail(row)
+    result = _serialize_detail(row)
+    if (result.get("transcript_status") == "AVAILABLE"
+            and result.get("transcript_expires_at")
+            and result["transcript_expires_at"] <= datetime.now(timezone.utc).isoformat()):
+        result["redacted_transcript"] = None
+        result["transcript_status"] = "EXPIRED"
+    return result
+
+
+_cleanup_stop = threading.Event()
+_cleanup_thread: threading.Thread | None = None
+
+
+def cleanup_expired_transcripts() -> int:
+    """Scrub expired transcript fields atomically while preserving report rows."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = database.get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.execute(
+            "UPDATE scam_assessments SET redacted_transcript = NULL, "
+            "transcript_expires_at = NULL, transcript_status = 'EXPIRED' "
+            "WHERE transcript_status = 'AVAILABLE' AND transcript_expires_at <= ?",
+            (now,),
+        )
+        conn.commit()
+        return cur.rowcount
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _transcript_cleanup_loop() -> None:
+    logger = logging.getLogger(__name__)
+    while not _cleanup_stop.wait(60):
+        try:
+            cleanup_expired_transcripts()
+        except Exception as exc:
+            logger.warning("transcript_cleanup_failed error=%s", type(exc).__name__)
+
+
+def start_transcript_cleanup_worker() -> None:
+    global _cleanup_thread
+    if _cleanup_thread is not None and _cleanup_thread.is_alive():
+        return
+    _cleanup_stop.clear()
+    _cleanup_thread = threading.Thread(
+        target=_transcript_cleanup_loop, name="transcript-cleanup", daemon=True
+    )
+    _cleanup_thread.start()
+
+
+def stop_transcript_cleanup_worker() -> None:
+    global _cleanup_thread
+    _cleanup_stop.set()
+    thread = _cleanup_thread
+    if thread is not None:
+        thread.join(timeout=2)
+    _cleanup_thread = None
