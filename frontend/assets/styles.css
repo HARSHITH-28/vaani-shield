@@ -194,16 +194,22 @@ p, span, label, div {
 }
 
 .demo-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  height: 42px;
+  width: 100%;
   padding: 0.35rem 0.85rem;
   background: rgba(91, 77, 223, 0.08);
-  border: 1px solid rgba(91, 77, 223, 0.25);
-  border-radius: var(--radius-full);
-  font-size: 0.68rem;
+  border: 1.5px solid rgba(91, 77, 223, 0.25);
+  border-radius: var(--radius-md);
+  font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 1.2px;
-  color: var(--secondary-lavender);
+  color: var(--primary-violet);
   text-align: center;
+  box-sizing: border-box;
 }
 
 /* ==========================================================================
@@ -281,7 +287,7 @@ p, span, label, div {
 .st-key-main-nav-container div[data-testid="column"] button[kind="secondary"]:hover,
 :is(.st-key-main-nav-container-copilot-open,.st-key-main-nav-container) div[data-testid="column"] button[kind="secondary"]:hover {
   background: var(--subtle-lavender) !important;
-  border-color: rgba(151, 20, 77, 0.3) !important;
+  border-color: rgba(91, 63, 196, 0.3) !important;
   transform: translateY(-1px) !important;
   box-shadow: var(--shadow-md) !important;
 }
@@ -290,15 +296,15 @@ p, span, label, div {
 .st-key-main-nav-container div[data-testid="column"] button[kind="secondary"]:hover span,
 :is(.st-key-main-nav-container-copilot-open,.st-key-main-nav-container) div[data-testid="column"] button[kind="secondary"]:hover p,
 :is(.st-key-main-nav-container-copilot-open,.st-key-main-nav-container) div[data-testid="column"] button[kind="secondary"]:hover span {
-  color: #97144D !important;
+  color: #5B3FC4 !important;
 }
 
-/* Active Main Feature Tab (Axis Burgundy & White Bold Text) */
+/* Active Main Feature Tab (Royal Violet Gradient & White Bold Text) */
 .st-key-main-nav-container div[data-testid="column"] button[kind="primary"],
 :is(.st-key-main-nav-container-copilot-open,.st-key-main-nav-container) div[data-testid="column"] button[kind="primary"] {
-  background: linear-gradient(135deg, #97144D 0%, #7B103E 100%) !important;
-  border: 1px solid #7B103E !important;
-  box-shadow: 0 4px 12px rgba(151, 20, 77, 0.28) !important;
+  background: var(--primary-violet-gradient, linear-gradient(135deg, #5B3FC4 0%, #472E9E 100%)) !important;
+  border: 1px solid #472E9E !important;
+  box-shadow: 0 4px 14px rgba(91, 63, 196, 0.28) !important;
 }
 
 .st-key-main-nav-container div[data-testid="column"] button[kind="primary"],
@@ -461,43 +467,43 @@ p, span, label, div {
 
 /* Inactive Subfeature Hover: Single subtle surface highlight */
 [data-testid="stSidebar"] div.stButton > button[kind="secondary"]:hover {
-  background: rgba(151, 20, 77, 0.06) !important;
-  border-color: rgba(151, 20, 77, 0.18) !important;
+  background: rgba(91, 63, 196, 0.08) !important;
+  border-color: rgba(91, 63, 196, 0.22) !important;
   transform: translateX(2px) !important;
 }
 
 [data-testid="stSidebar"] div.stButton > button[kind="secondary"]:hover p,
 [data-testid="stSidebar"] div.stButton > button[kind="secondary"]:hover span {
-  color: #97144D !important;
+  color: #5B3FC4 !important;
   font-weight: 700 !important;
 }
 
-/* Active Subfeature Button Surface: Axis Burgundy theme with exactly ONE left border */
+/* Active Subfeature Button Surface: VaaniShield Royal Violet theme with clean left accent */
 [data-testid="stSidebar"] div.stButton > button[kind="primary"] {
-  background: #FDF2F8 !important;
-  border: 1px solid #FBCFE8 !important;
-  border-left: 4px solid #97144D !important;
-  box-shadow: var(--shadow-sm) !important;
+  background: #EDE9FE !important;
+  border: 1px solid #DDD6FE !important;
+  border-left: 4px solid #5B3FC4 !important;
+  box-shadow: 0 2px 8px rgba(91, 63, 196, 0.08) !important;
 }
 
-/* Active Subfeature Text: Bold 700 Axis Burgundy */
+/* Active Subfeature Text: Bold 700 Royal Violet */
 [data-testid="stSidebar"] div.stButton > button[kind="primary"],
 [data-testid="stSidebar"] div.stButton > button[kind="primary"] p,
 [data-testid="stSidebar"] div.stButton > button[kind="primary"] span {
-  color: #97144D !important;
+  color: #432E9E !important;
   font-weight: 700 !important;
 }
 
 /* Active Subfeature Hover */
 [data-testid="stSidebar"] div.stButton > button[kind="primary"]:hover {
-  background: #FCE7F3 !important;
-  border-color: #F9A8D4 !important;
-  border-left: 4px solid #7A0C3C !important;
+  background: #E4DCFD !important;
+  border-color: #C4B5FD !important;
+  border-left: 4px solid #371C8F !important;
 }
 
 [data-testid="stSidebar"] div.stButton > button[kind="primary"]:hover p,
 [data-testid="stSidebar"] div.stButton > button[kind="primary"]:hover span {
-  color: #7A0C3C !important;
+  color: #311880 !important;
 }
 
 /* Sidebar Preferences & Demo Profile Popover Triggers */
@@ -1676,6 +1682,66 @@ div[data-testid="stButton"].st-key-header-copilot-toggle > button[kind="primary"
   box-shadow: 0 4px 14px rgba(79, 70, 229, 0.32) !important;
 }
 
+/* Top Header Popover (Notification Bell) Alignment */
+:is(.st-key-profile-header, .st-key-profile-header-copilot-open) div[data-testid="stPopover"],
+:is(.st-key-profile-header, .st-key-profile-header-copilot-open) div[data-testid="stPopover"] > button {
+  width: 100% !important;
+  min-height: 42px !important;
+  height: 42px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+}
+
+/* Quick Action Strip Buttons (Overview) */
+.st-key-toggle-balance-vis-btn > button,
+.st-key-quick-open-account-btn > button,
+.st-key-quick-tx-explorer-btn > button {
+  min-height: 42px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.45rem !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  font-size: 0.88rem !important;
+  background: #FFFFFF !important;
+  border: 1.5px solid #D8CFF8 !important;
+  color: #352163 !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: all 0.18s ease !important;
+}
+
+.st-key-toggle-balance-vis-btn > button:hover,
+.st-key-quick-open-account-btn > button:hover,
+.st-key-quick-tx-explorer-btn > button:hover {
+  background: #F7F4FF !important;
+  border-color: #5B3FC4 !important;
+  color: #5B3FC4 !important;
+  transform: translateY(-1px) !important;
+}
+
+/* View All Transactions Link/Button */
+.st-key-view-all-tx-link > button {
+  min-height: 38px !important;
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.82rem !important;
+  font-weight: 700 !important;
+  color: #5B3FC4 !important;
+  background: #F7F4FF !important;
+  border: 1px solid #E7E0FF !important;
+  border-radius: 8px !important;
+  transition: all 0.16s ease !important;
+}
+
+.st-key-view-all-tx-link > button:hover {
+  background: #EEE9FF !important;
+  border-color: #5B3FC4 !important;
+  color: #371C8F !important;
+}
+
 /* ==========================================================================
    METRIC CARDS & STREAMLIT WIDGET OVERRIDES (LIGHT FINTECH)
    ========================================================================== */
@@ -2003,19 +2069,34 @@ li[data-baseweb="menu-item"][aria-selected="true"] {
 /* High-contrast Buttons */
 .stButton > button[kind="primary"],
 [data-testid="stFormSubmitButton"] button[kind="primary"] {
-  background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%) !important;
+  background: linear-gradient(135deg, #5B3FC4 0%, #472E9E 100%) !important;
   color: #FFFFFF !important;
   font-weight: 700 !important;
-  border: none !important;
-  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.28) !important;
+  border: 1px solid #472E9E !important;
+  box-shadow: 0 4px 14px rgba(91, 63, 196, 0.28) !important;
+}
+
+.stButton > button[kind="primary"]:hover,
+[data-testid="stFormSubmitButton"] button[kind="primary"]:hover {
+  background: linear-gradient(135deg, #6D5DE7 0%, #5237BC 100%) !important;
+  box-shadow: 0 6px 18px rgba(91, 63, 196, 0.4) !important;
+  transform: translateY(-1px) !important;
 }
 
 .stButton > button[kind="secondary"],
 [data-testid="stFormSubmitButton"] button[kind="secondary"] {
   background-color: #FFFFFF !important;
-  color: #172033 !important;
-  border: 1px solid #CBD5E1 !important;
+  color: #1F1B2D !important;
+  border: 1.5px solid #D8CFF8 !important;
   font-weight: 600 !important;
+}
+
+.stButton > button[kind="secondary"]:hover,
+[data-testid="stFormSubmitButton"] button[kind="secondary"]:hover {
+  background-color: #F7F4FF !important;
+  border-color: #5B3FC4 !important;
+  color: #472E9E !important;
+  transform: translateY(-1px) !important;
 }
 
 .stButton > button:disabled,
@@ -2362,6 +2443,47 @@ li[data-baseweb="menu-item"][aria-selected="true"] {
   box-shadow: 0 2px 8px rgba(91, 63, 196, 0.1);
 }
 
+/* Auth Mode Switcher Container (Segmented Pill) */
+.st-key-auth-mode-switcher {
+  background: #F3F0FF !important;
+  border: 1px solid #E7E0FF !important;
+  border-radius: 14px !important;
+  padding: 4px !important;
+  margin-bottom: 1.25rem !important;
+}
+
+.st-key-auth-mode-switcher [data-testid="stHorizontalBlock"] {
+  gap: 6px !important;
+  align-items: center !important;
+}
+
+.st-key-auth-mode-switcher button {
+  min-height: 44px !important;
+  border-radius: 10px !important;
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+  transition: all 0.18s ease !important;
+}
+
+.st-key-auth-mode-switcher button[kind="primary"] {
+  background: #FFFFFF !important;
+  color: #5B3FC4 !important;
+  border: 1px solid #D8CFF8 !important;
+  box-shadow: 0 2px 8px rgba(91, 63, 196, 0.12) !important;
+}
+
+.st-key-auth-mode-switcher button[kind="secondary"] {
+  background: transparent !important;
+  color: #6B667A !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+
+.st-key-auth-mode-switcher button[kind="secondary"]:hover {
+  background: rgba(255, 255, 255, 0.6) !important;
+  color: #472E9E !important;
+}
+
 /* Quick Select Demo Strip */
 .demo-quick-strip {
   background: #F7F4FF;
@@ -2369,6 +2491,41 @@ li[data-baseweb="menu-item"][aria-selected="true"] {
   border-radius: 12px;
   padding: 0.85rem 1rem;
   margin-bottom: 1.25rem;
+}
+
+/* Quick Select Demo Strip Container */
+.st-key-demo-quick-strip {
+  background: #F7F4FF !important;
+  border: 1px solid #E7E0FF !important;
+  border-radius: 14px !important;
+  padding: 0.85rem 1rem !important;
+  margin-bottom: 1.25rem !important;
+}
+
+.st-key-demo-quick-strip [data-testid="stHorizontalBlock"] {
+  gap: 0.5rem !important;
+}
+
+.st-key-demo-quick-strip button {
+  min-height: 38px !important;
+  padding: 0.45rem 0.65rem !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  border-radius: 10px !important;
+  background: #FFFFFF !important;
+  border: 1.5px solid #D8CFF8 !important;
+  color: #352163 !important;
+  box-shadow: var(--shadow-sm) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.st-key-demo-quick-strip button:hover {
+  background: #EEE9FF !important;
+  border-color: #5B3FC4 !important;
+  color: #5B3FC4 !important;
+  transform: translateY(-1px) !important;
 }
 
 .demo-quick-title {

@@ -83,7 +83,7 @@ def _render_create_form(st, api, state):
             st.markdown(f"**Subject:** {created_ticket.get('subject')}")
             st.markdown(f"**Category:** {created_ticket.get('category', '').title()} · **Priority:** {created_ticket.get('priority')}")
             st.caption("Synthetic demo case. Recorded in your authenticated self-service account.")
-            c1, c2 = st.columns(2)
+            c1, c2 = st.columns(2, vertical_alignment="center")
             if c1.button("📋 View in My Support Tickets", key="view_created_ticket_btn", type="primary"):
                 state["support_selected_ticket_ref"] = created_ticket.get("ticket_ref")
                 state["support_ticket_created_success"] = None
@@ -105,7 +105,7 @@ def _render_create_form(st, api, state):
             st.write(f"**Description:** {review_data['description'] or 'No additional description provided.'}")
             st.caption("Illustrative synthetic demo data. Submitting creates a demonstration case in your profile.")
 
-            btn_col1, btn_col2 = st.columns(2)
+            btn_col1, btn_col2 = st.columns(2, vertical_alignment="center")
             if btn_col1.button("Confirm & Submit Ticket", key="confirm_support_ticket_btn", type="primary"):
                 try:
                     with st.spinner("Submitting support ticket…"):
@@ -230,7 +230,7 @@ def render(st, subfeature="Ask Support Assistant", api=None, state=None):
     st.markdown("### My support tickets")
     state.setdefault("support_ticket_filters", {"status": "All statuses", "category": "All categories"})
     with st.container(border=True):
-        filter_left, filter_middle, filter_right = st.columns(3)
+        filter_left, filter_middle, filter_right = st.columns(3, vertical_alignment="center")
         with filter_left:
             status_label = st.selectbox(
                 "Filter by status", ["All statuses", *STATUSES],

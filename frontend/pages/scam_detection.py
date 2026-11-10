@@ -461,7 +461,7 @@ def _render_transaction_risk(st, api, state):
                     f"Public reference: {transaction['transaction_ref']}"
                 )
         if len(transactions) > _TRANSACTION_PAGE_SIZE:
-            left, right = st.columns(2)
+            left, right = st.columns(2, vertical_alignment="center")
             if left.button("Previous transactions", disabled=page_index == 0, key="transaction-risk-prev"):
                 state["transaction_risk_tx_page"] = page_index - 1
                 st.rerun()

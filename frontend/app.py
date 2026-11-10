@@ -259,45 +259,47 @@ if not st.session_state.authenticated:
         )
 
         # Two-option segmented switcher
-        tab_btn1, tab_btn2 = st.columns(2)
-        if tab_btn1.button(
-            "🔐 Sign In to Account",
-            key="tab_signin_btn",
-            type="primary" if st.session_state["auth_mode_tab"] == "signin" else "secondary",
-            use_container_width=True,
-        ):
-            st.session_state["auth_mode_tab"] = "signin"
-            st.rerun()
+        with st.container(key="auth-mode-switcher"):
+            tab_btn1, tab_btn2 = st.columns(2)
+            if tab_btn1.button(
+                "🔐 Sign In to Account",
+                key="tab_signin_btn",
+                type="primary" if st.session_state["auth_mode_tab"] == "signin" else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["auth_mode_tab"] = "signin"
+                st.rerun()
 
-        if tab_btn2.button(
-            "✨ Open New Account",
-            key="tab_register_btn",
-            type="primary" if st.session_state["auth_mode_tab"] == "register" else "secondary",
-            use_container_width=True,
-        ):
-            st.session_state["auth_mode_tab"] = "register"
-            st.session_state.setdefault("reg_stage", "input")
-            st.rerun()
+            if tab_btn2.button(
+                "✨ Open New Account",
+                key="tab_register_btn",
+                type="primary" if st.session_state["auth_mode_tab"] == "register" else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["auth_mode_tab"] = "register"
+                st.session_state.setdefault("reg_stage", "input")
+                st.rerun()
 
         # OPTION 1: SIGN IN
         if st.session_state["auth_mode_tab"] == "signin":
             # Quick Demo Customer Pre-fill Strip
-            st.markdown(
-                textwrap.dedent("""
-                <div class="demo-quick-title">&#9889; Quick Demo Access</div>
-                """).strip(),
-                unsafe_allow_html=True,
-            )
-            qc1, qc2, qc3 = st.columns(3)
-            if qc1.button("Arjun Sharma\n(Primary Demo)", key="btn_quick_arjun", use_container_width=True):
-                st.session_state["login_email"] = "arjun@example.com"
-                st.session_state["login_password"] = "Arjun@Demo2026"
-            if qc2.button("Priya Patel\n(Business Acct)", key="btn_quick_priya", use_container_width=True):
-                st.session_state["login_email"] = "priya@example.com"
-                st.session_state["login_password"] = "Priya@Demo2026"
-            if qc3.button("Rahul Verma\n(Savings Acct)", key="btn_quick_rahul", use_container_width=True):
-                st.session_state["login_email"] = "rahul@example.com"
-                st.session_state["login_password"] = "Rahul@Demo2026"
+            with st.container(key="demo-quick-strip"):
+                st.markdown(
+                    textwrap.dedent("""
+                    <div class="demo-quick-title">&#9889; Quick Demo Access</div>
+                    """).strip(),
+                    unsafe_allow_html=True,
+                )
+                qc1, qc2, qc3 = st.columns(3)
+                if qc1.button("👤 Arjun Sharma (Primary)", key="btn_quick_arjun", use_container_width=True):
+                    st.session_state["login_email"] = "arjun@example.com"
+                    st.session_state["login_password"] = "Arjun@Demo2026"
+                if qc2.button("💼 Priya Patel (Business)", key="btn_quick_priya", use_container_width=True):
+                    st.session_state["login_email"] = "priya@example.com"
+                    st.session_state["login_password"] = "Priya@Demo2026"
+                if qc3.button("🏦 Rahul Verma (Savings)", key="btn_quick_rahul", use_container_width=True):
+                    st.session_state["login_email"] = "rahul@example.com"
+                    st.session_state["login_password"] = "Rahul@Demo2026"
 
             default_email = st.session_state.get("login_email", "arjun@example.com")
             default_pwd = st.session_state.get("login_password", "Arjun@Demo2026")
@@ -486,15 +488,35 @@ if not st.session_state.authenticated:
                         placeholder="••••••",
                         key="reg_otp_input_field",
                     )
-                    v_col1, v_col2, v_col3, v_col4 = st.columns([1.5, 1.0, 1.0, 1.0])
+                    # Prominent primary activation button
+                    verify_submitted = st.form_submit_button(
+                        "Verify & Activate Account 🚀",
+                        type="primary",
+                        use_container_width=True,
+                    )
+                    # Balanced secondary action row
+                    v_col1, v_col2, v_col3 = st.columns(3)
                     with v_col1:
-                        verify_submitted = st.form_submit_button("Verify & Activate Account 🚀", type="primary", use_container_width=True)
+                        autofill_clicked = st.form_submit_button(
+                            "⚡ Fill Code",
+                            type="secondary",
+                            use_container_width=True,
+                            help="Autofill the active verification code",
+                        ) if dev_otp else False
                     with v_col2:
-                        autofill_clicked = st.form_submit_button(f"⚡ Fill Code", type="secondary", use_container_width=True) if dev_otp else False
+                        resend_code_clicked = st.form_submit_button(
+                            "🔄 Resend Code",
+                            type="secondary",
+                            use_container_width=True,
+                            help="Request a new verification code",
+                        )
                     with v_col3:
-                        resend_code_clicked = st.form_submit_button("🔄 Resend Code", type="secondary", use_container_width=True)
-                    with v_col4:
-                        change_details_clicked = st.form_submit_button("← Edit Info", type="secondary", use_container_width=True)
+                        change_details_clicked = st.form_submit_button(
+                            "← Edit Info",
+                            type="secondary",
+                            use_container_width=True,
+                            help="Return to registration details",
+                        )
 
                 if autofill_clicked and dev_otp:
                     st.session_state["reg_otp_fill_value"] = str(dev_otp)
@@ -579,7 +601,7 @@ profile_name = st.session_state.customer.get("display_name", "Demo customer")
 # LEVEL 1 — TOP HEADER (FULL-WIDTH BRAND & IDENTITY)
 # ==================================================
 with st.container(key="profile-header-copilot-open" if assistant_dock_is_visible(st.session_state) else "profile-header"):
-    brand, identity, notif_col, demo_badge, copilot_action = st.columns([1.8, 2.6, 0.9, 1.1, 1.2])
+    brand, identity, notif_col, demo_badge, copilot_action = st.columns([1.8, 2.6, 0.9, 1.1, 1.2], vertical_alignment="center")
     with brand:
         st.markdown(
             "<div class='brand-lockup'><span class='brand-mark'>🛡️</span>"
@@ -966,7 +988,7 @@ with st.container(key=workspace_key):
         savings_rate = advisory.get("savings_analysis", {}).get("savings_rate", 0)
         col4.metric("Savings Rate", f"{savings_rate:.1f}%")
 
-        q1, q2, q3 = st.columns(3)
+        q1, q2, q3 = st.columns(3, vertical_alignment="center")
         with q1:
             vis_label = "👁️ Hide Balance" if is_visible else "👁️ Show Balance"
             if st.button(vis_label, key="toggle-balance-vis-btn", width="stretch"):
@@ -985,7 +1007,7 @@ with st.container(key=workspace_key):
         left, right = st.columns([1.6, 1])
     
         with left:
-            tx_hdr_left, tx_hdr_right = st.columns([2.5, 1.2])
+            tx_hdr_left, tx_hdr_right = st.columns([2.5, 1.2], vertical_alignment="center")
             with tx_hdr_left:
                 st.markdown("### Recent Transactions")
             with tx_hdr_right:
@@ -1813,7 +1835,7 @@ with st.container(key=workspace_key):
                                 st.info("💳 Debit card transactions are debited directly from your primary savings account.")
 
                             st.markdown("#### Security & Card Controls")
-                            c_ctrl1, c_ctrl2 = st.columns(2)
+                            c_ctrl1, c_ctrl2 = st.columns(2, vertical_alignment="center")
 
                             with c_ctrl1:
                                 if status == "FROZEN":

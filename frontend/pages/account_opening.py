@@ -97,7 +97,7 @@ def _render_step_header(st, state, current_subfeature: str, current_app: dict | 
     prev_feature, prev_subfeature = get_previous_navigation(state)
     back_label = f"← Back to {prev_feature}" if prev_feature != "Account Opening Assistant" else f"← Back to {prev_subfeature}"
 
-    top_back, top_left, top_right = st.columns([1.1, 2.3, 1.0])
+    top_back, top_left, top_right = st.columns([1.1, 2.3, 1.0], vertical_alignment="center")
     with top_back:
         if st.button(
             back_label,
@@ -228,7 +228,7 @@ def _render_open_new_account(st, api, state, current_app: dict | None, options_d
         p3.text_input("Profile Reference", value=ref, disabled=True)
 
     with st.container(border=True):
-        form_hdr_left, form_hdr_right = st.columns([3, 1.35])
+        form_hdr_left, form_hdr_right = st.columns([3, 1.35], vertical_alignment="center")
         with form_hdr_left:
             st.markdown("#### Application Details Form")
             st.caption("Your progress is saved as a draft so you can resume at any time.")
