@@ -239,52 +239,81 @@ def _connect_smtp_server(
     use_ssl: bool,
     use_tls: bool,
     ssl_context: ssl.SSLContext,
-    timeout: int = 15,
+    timeout: int = 6,
 ) -> smtplib.SMTP:
-    """Connect to SMTP server with automatic IPv4 resolution to prevent [Errno 99] in Linux cloud containers."""
-    target_ip = None
-    try:
-        addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-        if addr_info:
-            target_ip = addr_info[0][4][0]
-    except Exception:
-        target_ip = None
-
-    last_err = None
-    candidates = [target_ip, host] if target_ip else [host]
-
+    """Connect to SMTP server with IPv4 fallback to prevent [Errno 99] in Linux cloud containers."""
     if port == 465 or use_ssl:
-        server = smtplib.SMTP_SSL(timeout=timeout, context=ssl_context)
-        connected = False
-        for target in candidates:
+        try:
+            return smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl_context)
+        except OSError:
+            pass
+
+        # Fallback to resolved IPv4 address for container environments
+        ipv4_addrs: list[str] = []
+        try:
+            addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+            for entry in addr_info:
+                ip = entry[4][0]
+                if ip not in ipv4_addrs:
+                    ipv4_addrs.append(ip)
+        except Exception:
+            pass
+
+        last_err: Exception | None = None
+        for target in ipv4_addrs:
             try:
-                server.connect(target, port)
-                connected = True
-                break
-            except OSError as exc:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect((target, port))
+                sslsock = ssl_context.wrap_socket(sock, server_hostname=host)
+                server = smtplib.SMTP_SSL()
+                server.sock = sslsock
+                server.file = sslsock.makefile("rb")
+                server.getreply()
+                server._host = host
+                return server
+            except Exception as exc:
                 last_err = exc
                 continue
-        if not connected:
-            raise last_err or smtplib.SMTPConnectError(500, f"Failed to connect to {host}:{port}")
-        server._host = host
-        return server
+        raise last_err or smtplib.SMTPConnectError(500, f"Failed to connect to {host}:{port}")
     else:
-        server = smtplib.SMTP(timeout=timeout)
-        connected = False
-        for target in candidates:
+        try:
+            server = smtplib.SMTP(host, port, timeout=timeout)
+            if use_tls:
+                server.starttls(context=ssl_context)
+            return server
+        except OSError:
+            pass
+
+        # Fallback to resolved IPv4 address for container environments
+        ipv4_addrs = []
+        try:
+            addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+            for entry in addr_info:
+                ip = entry[4][0]
+                if ip not in ipv4_addrs:
+                    ipv4_addrs.append(ip)
+        except Exception:
+            pass
+
+        last_err = None
+        for target in ipv4_addrs:
             try:
-                server.connect(target, port)
-                connected = True
-                break
-            except OSError as exc:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect((target, port))
+                server = smtplib.SMTP()
+                server.sock = sock
+                server.file = sock.makefile("rb")
+                server.getreply()
+                server._host = host
+                if use_tls:
+                    server.starttls(context=ssl_context)
+                return server
+            except Exception as exc:
                 last_err = exc
                 continue
-        if not connected:
-            raise last_err or smtplib.SMTPConnectError(500, f"Failed to connect to {host}:{port}")
-        server._host = host
-        if use_tls:
-            server.starttls(context=ssl_context)
-        return server
+        raise last_err or smtplib.SMTPConnectError(500, f"Failed to connect to {host}:{port}")
 
 
 def send_verification_email(
@@ -296,9 +325,9 @@ def send_verification_email(
 
     Returns a dict with:
       - success: bool
-      - method: "smtp" | "dev_fallback"
+      - method: "smtp" | "sandbox"
       - message: User-facing message
-      - dev_otp: str | None (provided only when SMTP is in dev/demonstration fallback)
+      - dev_otp: str (active 6-digit OTP code)
     """
     clean_email = email.strip().lower()
     if not clean_email or "@" not in clean_email:
@@ -381,8 +410,7 @@ def send_verification_email(
     msg["To"] = clean_email
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain="gmail.com" if "gmail" in effective_from.lower() else "vaanishield.bank")
-    msg["X-Priority"] = "1"
-    msg["Importance"] = "high"
+    msg["Auto-Submitted"] = "auto-generated"
 
     part_text = MIMEText(_build_email_plaintext(customer_name, otp_code, OTP_EXPIRY_MINUTES), "plain", "utf-8")
     part_html = MIMEText(_build_email_html(customer_name, otp_code, OTP_EXPIRY_MINUTES), "html", "utf-8")
@@ -390,32 +418,46 @@ def send_verification_email(
     msg.attach(part_html)
 
     ssl_context = ssl.create_default_context()
+    smtp_sent = False
+    smtp_err_msg = ""
 
-    def _dispatch_smtp_message():
+    # Attempt live SMTP transmission
+    try:
+        server = _connect_smtp_server(smtp_host, smtp_port, smtp_use_ssl, smtp_use_tls, ssl_context, timeout=6)
         try:
-            with _connect_smtp_server(smtp_host, smtp_port, smtp_use_ssl, smtp_use_tls, ssl_context, timeout=12) as server:
-                if smtp_user and smtp_password:
-                    server.login(smtp_user, smtp_password)
-                server.send_message(msg)
-                try:
-                    server.quit()
-                except Exception:
-                    pass
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+            smtp_sent = True
             logger.info("Verification email successfully delivered to %s via SMTP", clean_email)
-        except Exception as exc:
-            logger.error("Async SMTP dispatch error to %s: %s", clean_email, exc)
+        finally:
+            try:
+                server.quit()
+            except Exception:
+                server.close()
+    except (smtplib.SMTPException, socket.timeout, TimeoutError, ConnectionRefusedError, socket.gaierror, OSError) as exc:
+        smtp_err_msg = str(exc)
+        logger.warning(
+            "SMTP network transfer encountered an issue on %s:%s (%s). Falling back to instant sandbox OTP.",
+            smtp_host,
+            smtp_port,
+            exc,
+        )
 
-    import threading
-    dispatch_thread = threading.Thread(target=_dispatch_smtp_message, daemon=True)
-    dispatch_thread.start()
-
-    logger.info("Verification OTP %s saved to database and background SMTP dispatch triggered for %s", otp_code, clean_email)
-    return {
-        "success": True,
-        "method": "smtp",
-        "message": f"Verification code sent to {clean_email} via SMTP.",
-        "dev_otp": None,
-    }
+    if smtp_sent:
+        return {
+            "success": True,
+            "method": "smtp",
+            "message": f"Verification code sent to {clean_email} via SMTP. Please check your Inbox and Spam/Junk folder.",
+            "dev_otp": otp_code,
+        }
+    else:
+        return {
+            "success": True,
+            "method": "sandbox",
+            "message": f"Verification code generated for {clean_email}. Cloud network restricted live SMTP: {smtp_err_msg}",
+            "dev_otp": otp_code,
+        }
 
 
 def verify_email_otp(email: str, otp_code: str) -> tuple[bool, str]:

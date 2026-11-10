@@ -75,6 +75,7 @@ class RegisterSendOtpResponse(ContractModel):
     email: str
     message: str
     dev_otp: str | None = None
+    method: str | None = "smtp"
 
 
 class RegisterVerifyOtpRequest(ContractModel):

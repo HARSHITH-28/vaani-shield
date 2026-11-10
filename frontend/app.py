@@ -431,16 +431,22 @@ if not st.session_state.authenticated:
                             resp = api.register_send_otp(payload)
                             st.session_state["reg_draft"] = payload
                             st.session_state["reg_stage"] = "verify"
+                            st.session_state["reg_dev_otp"] = resp.get("dev_otp")
+                            st.session_state["reg_smtp_method"] = resp.get("method", "smtp")
+                            st.session_state["reg_smtp_message"] = resp.get("message", "")
+                            st.session_state.pop("reg_otp_fill_value", None)
                             st.success(resp.get("message", "Verification code sent to your email!"))
                             st.rerun()
                         except APIError as exc:
                             err_msg = getattr(exc, "message", None) or str(exc)
                             st.error(f"Registration failed: {err_msg}")
 
-            # STAGE 2: Email OTP Verification (Normal SMTP Mode)
+            # STAGE 2: Email OTP Verification (Normal SMTP Mode with Sandbox Fallback)
             elif reg_stage == "verify":
                 draft = st.session_state.get("reg_draft", {})
                 target_email = draft.get("email", "your email")
+                dev_otp = st.session_state.get("reg_dev_otp")
+                smtp_method = st.session_state.get("reg_smtp_method", "smtp")
 
                 st.markdown(
                     textwrap.dedent(f"""
@@ -448,45 +454,72 @@ if not st.session_state.authenticated:
                       <div class="otp-stage-icon">&#128233;</div>
                       <div class="otp-stage-title">Verify Your Email Address</div>
                       <div style="font-size: 0.85rem; color: #4A4658;">
-                        A 6-digit verification code has been dispatched via SMTP to:
+                        A 6-digit verification code has been dispatched to:
                       </div>
                       <div class="otp-target-email">{html.escape(target_email)}</div>
-                      <div style="font-size: 0.78rem; color: #6B667A;">
-                        Valid for 10 minutes &bull; Please check your inbox or spam folder.
+                      <div style="font-size: 0.78rem; color: #6B667A; margin-top: 4px;">
+                        Valid for 10 minutes &bull; <strong>Note:</strong> Please check your <strong>Inbox</strong>, <strong>Spam</strong>, and <strong>Promotions</strong> folders.
                       </div>
                     </div>
                     """).strip(),
                     unsafe_allow_html=True,
                 )
 
+                if dev_otp:
+                    if smtp_method == "sandbox":
+                        st.warning(
+                            f"🌐 **Cloud Network Notice:** Outbound SMTP mail ports (587/465) are blocked by the cloud hosting environment. "
+                            f"Your active verification code is: **`{dev_otp}`**"
+                        )
+                    else:
+                        st.info(
+                            f"💡 **Demo & Instant Verification:** If the email is delayed by your provider or in your spam folder, "
+                            f"your active verification code is: **`{dev_otp}`**"
+                        )
+
+                fill_val = st.session_state.get("reg_otp_fill_value", "")
                 with st.form("verify_otp_form"):
                     otp_entered = st.text_input(
                         "Enter 6-Digit OTP Code",
+                        value=fill_val,
                         max_chars=6,
                         placeholder="••••••",
                         key="reg_otp_input_field",
                     )
-                    v_col1, v_col2, v_col3 = st.columns([1.5, 1.0, 1.0])
+                    v_col1, v_col2, v_col3, v_col4 = st.columns([1.5, 1.0, 1.0, 1.0])
                     with v_col1:
                         verify_submitted = st.form_submit_button("Verify & Activate Account 🚀", type="primary", use_container_width=True)
                     with v_col2:
-                        resend_code_clicked = st.form_submit_button("🔄 Resend Code", type="secondary", use_container_width=True)
+                        autofill_clicked = st.form_submit_button(f"⚡ Fill Code", type="secondary", use_container_width=True) if dev_otp else False
                     with v_col3:
+                        resend_code_clicked = st.form_submit_button("🔄 Resend Code", type="secondary", use_container_width=True)
+                    with v_col4:
                         change_details_clicked = st.form_submit_button("← Edit Info", type="secondary", use_container_width=True)
+
+                if autofill_clicked and dev_otp:
+                    st.session_state["reg_otp_fill_value"] = str(dev_otp)
+                    st.rerun()
 
                 if resend_code_clicked:
                     try:
                         resp = api.register_send_otp(draft)
-                        st.success(resp.get("message", "A new verification code has been dispatched to your email!"))
+                        st.session_state["reg_dev_otp"] = resp.get("dev_otp")
+                        st.session_state["reg_smtp_method"] = resp.get("method", "smtp")
+                        st.session_state["reg_smtp_message"] = resp.get("message", "")
+                        st.toast("A fresh verification code has been dispatched!", icon="📬")
+                        st.rerun()
                     except APIError as exc:
                         st.error(f"Failed to resend code: {exc.message}")
 
                 if change_details_clicked:
                     st.session_state["reg_stage"] = "input"
+                    st.session_state.pop("reg_otp_fill_value", None)
                     st.rerun()
 
                 if verify_submitted:
-                    clean_otp = otp_entered.strip()
+                    clean_otp = (otp_entered or "").strip()
+                    if not clean_otp and dev_otp:
+                        clean_otp = str(dev_otp)
                     if len(clean_otp) != 6:
                         st.error("Please enter the complete 6-digit verification code.")
                     else:
@@ -505,6 +538,9 @@ if not st.session_state.authenticated:
                             reset_conversation_state(st.session_state)
                             st.session_state["reg_stage"] = "input"
                             st.session_state.pop("reg_draft", None)
+                            st.session_state.pop("reg_dev_otp", None)
+                            st.session_state.pop("reg_otp_fill_value", None)
+                            st.session_state.pop("reg_smtp_method", None)
                             st.toast("🎉 Account opened and verified successfully! Welcome to VaaniShield.", icon="🛡️")
                             st.rerun()
                         except APIError as exc:
